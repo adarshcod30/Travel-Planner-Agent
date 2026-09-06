@@ -149,7 +149,7 @@ runs once across a pause-and-accept cycle.
 | Persistence | PostgreSQL 18 + pgvector | Aegra owns checkpoints, threads, runs, assistants |
 | Tools | MCP — Playwright, Filesystem, Fetch, `travel-mcp` | `travel-mcp` written for this project |
 | Frontend | Next.js 16, React 19, Tailwind 4 | SSE streaming, no CORS |
-| Testing | pytest — 313 tests | Plus a live suite that is opt-in |
+| Testing | pytest — 324 tests | Plus a live suite that is opt-in |
 
 ### Model tiering
 
@@ -209,7 +209,7 @@ curl http://localhost:2026/health/deep
 ## Testing
 
 ```bash
-uv run pytest -m "not live"     # 313 tests, no credentials, no network
+uv run pytest -m "not live"     # 324 tests, no credentials, no network
 uv run pytest -m live           # real Bedrock calls — costs money
 ```
 

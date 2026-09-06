@@ -131,7 +131,7 @@ filter rather than a regex.
 
 ## Testing
 
-313 tests run without credentials or network, and without a `.env` —
+324 tests run without credentials or network, and without a `.env` —
 the model IDs have defaults so the suite is hermetic rather than passing only
 on a machine that happens to be configured. The graph tests drive the *real*
 compiled graphs with a scripted stand-in for the model layer, so topology,

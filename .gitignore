@@ -1,0 +1,75 @@
+# ---- Local-only prototype reference (never committed) ----
+_reference/
+
+# ---- Secrets: never commit ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials
+.aws/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+dist/
+build/
+venv/
+.venv/
+env/
+.python-version
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ---- Node / Next.js ----
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+.vercel/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Databases & runtime data ----
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/*.sqlite
+data/*.sqlite3
+*.db
+*.sqlite3
+logs/
+*.log
+
+# ---- Playwright / MCP runtime ----
+.playwright-mcp/
+playwright-report/
+test-results/
+browser-profiles/
+
+# ---- Terraform / infra state ----
+.terraform/
+*.tfstate
+*.tfstate.*
+cdk.out/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

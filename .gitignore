@@ -22,7 +22,7 @@ build/
 venv/
 .venv/
 env/
-.python-version
+# .python-version IS committed — uv uses it to pin the interpreter
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/

@@ -296,11 +296,77 @@ structured-output risk, so it is deliberately the longest of the early phases.
 1. **AWS credentials** — needed to complete Phase 1. Supplied via a named AWS
    profile or environment variables, never in the repo or in chat. Region is
    `us-east-1`.
-2. **Nova model access** — confirm the Nova family is invokable on the account in
-   `us-east-1` before Phase 1 starts (`aws bedrock list-foundation-models
-   --region us-east-1 --by-provider Amazon`).
+2. ~~**Nova model access**~~ — **resolved in Phase 0.** All four models resolved
+   and smoke-tested with live Converse calls (see §10).
 3. **Aegra semantic store with Bedrock embeddings** — Aegra's documented
    `store.index.embed` example uses an OpenAI embedding string. Whether it accepts
    Bedrock Titan embeddings is **unverified**; to be tested in Phase 8. The
    semantic store is not load-bearing for any of the five versions, so it is
    dropped from scope if unsupported.
+
+
+---
+
+## 10. Verified during Phase 0
+
+Findings established against the real toolchain, not assumed. Two of them changed
+the build.
+
+### Bedrock — resolved and smoke-tested
+All four models were resolved from the account (never hardcoded) and each
+returned a correct response to a live Converse call in `us-east-1`:
+
+| Env var | Inference profile | Status |
+|---|---|---|
+| `BEDROCK_MODEL_TIER_HIGH` | `us.amazon.nova-pro-v1:0` | live call OK |
+| `BEDROCK_MODEL_TIER_MID` | `us.amazon.nova-lite-v1:0` | live call OK |
+| `BEDROCK_MODEL_TIER_LOW` | `us.amazon.nova-micro-v1:0` | live call OK |
+| `BEDROCK_MODEL_FALLBACK` | `us.meta.llama3-3-70b-instruct-v1:0` | live call OK |
+
+Cross-region inference profiles are used in preference to the bare model IDs.
+`scripts/resolve_bedrock_models.sh` reproduces the resolution for another account
+or region.
+
+### Aegra version — the Python floor mattered
+`requires-python = ">=3.11"` caused uv to build the environment on 3.11 and
+silently resolve **aegra-api 0.6.0**, because **aegra-api ≥ 0.10.0 requires
+Python ≥ 3.12**. Nothing failed — it just quietly installed a much older server.
+
+That mattered, because 0.6.0's graph-factory support is a single zero-argument
+call whose result is then cached:
+
+```python
+if callable(graph):
+    graph = await graph()  # aegra-api 0.6.0 — called once, cached
+```
+
+The project floor is therefore **Python ≥ 3.12** (the environment runs 3.13.7),
+pinning **aegra-api 0.10.4**.
+
+### Factory graphs — confirmed, and richer than the plan assumed
+`aegra_api/services/graph_factory.py` in 0.10.4 documents four accepted factory
+signatures, invoked **per request** rather than cached:
+
+```
+0 params:  def make_graph() -> Graph
+1 param:   def make_graph(config: RunnableConfig) -> Graph
+1 param:   def make_graph(runtime: ServerRuntime) -> Graph
+2 params:  def make_graph(config, runtime: ServerRuntime) -> Graph
+```
+
+`@asynccontextmanager` factories are supported, and `langgraph_service.py`
+explicitly does not cache factory graphs ("Only cache static graphs — factory
+graphs must be re-invoked"). This is exactly the per-run MCP session lifecycle v5
+needs, so the v5 design in §5 stands as written.
+
+### Assistant versioning — confirmed present
+Both endpoints exist in 0.10.4, so the second versioning axis in §1 is real:
+
+- `POST /assistants/{assistant_id}/versions` — list all versions
+- `POST /assistants/{assistant_id}/latest` — set a version as latest
+
+### Environment
+Python 3.13.7 · uv 0.11.23 · langgraph 1.2.11 · langchain-aws 1.7.5 ·
+aegra-api 0.10.4 · aegra-cli 0.10.4 · mcp 1.29.1 · fastmcp 3.4.7 · Node 22.23.2.
+
+**PostgreSQL is not yet installed** on this machine — required by Phase 8, not before.

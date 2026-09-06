@@ -2,9 +2,11 @@
 
 | Script | Purpose |
 |---|---|
-| `bootstrap_postgres.sh` | Install and initialise PostgreSQL + pgvector natively, create the database and role |
-| `run_aegra.sh` | Start the Aegra server against the native database |
-| `run_playwright_mcp.sh` | Start the standalone Playwright MCP server (v5, http transport) |
-| `resolve_bedrock_models.sh` | Re-resolve Bedrock model IDs and inference profiles for a different account or region |
+| `bootstrap_postgres.sh` | Create the role, database and pgvector extension on a native PostgreSQL. Idempotent. |
+| `run_aegra.sh` | Apply migrations and serve all five graphs on port 2026. |
+| `run_all.sh` | The whole stack — PostgreSQL, Aegra and the frontend. |
+| `run_playwright_mcp.sh` | Standing Playwright MCP server, for `MCP_MODE=http` only. |
+| `resolve_bedrock_models.sh` | Print the model IDs and inference profiles this account exposes. |
 
-Scripts arrive with the phase that needs them; see `docs/DEVELOPMENT_PLAN.md`.
+None of them install packages; each says what is missing and how to get it.
+See [AEGRA_DEPLOYMENT.md](../docs/AEGRA_DEPLOYMENT.md) for the full runbook.

@@ -1,6 +1,6 @@
 # Travel Planner Agent — End-to-End Development Plan
 
-**Status:** awaiting approval
+**Status:** built — see the phase table in §8 and the results in the [README](../README.md)
 **Repo:** https://github.com/adarshcod30/Travel-Planner-Agent
 
 ---
@@ -284,6 +284,19 @@ Each phase ends in a working, committed, pushed state.
 | 9 | **Next.js frontend** | All five screens, SSE streaming, HITL, version comparison | 3d |
 | 10 | **Observability + tests** | Tracing, token/cost accounting, full suite green | 1.5d |
 | 11 | **Deploy + docs** | Linux runbook, systemd unit, production-grade README with mermaid diagrams, benchmark results | 1.5d |
+
+All eleven phases are complete. What actually shipped differs from the plan in
+three places, each recorded where it matters:
+
+- **Aegra 0.10.4, not 0.6.0.** A `requires-python` floor of 3.11 silently
+  resolved a much older server whose graph factories are called once and cached.
+  The floor is 3.12 for that reason — see §10.
+- **v5's specialists are not ReAct agents.** The research node gathers once,
+  deterministically, and every specialist reads the notes. Rationale in
+  [VERSIONS.md](VERSIONS.md#v5--live-research--v5_mcp).
+- **Browsing is a target chain, not a primary/fallback pair.** More than one
+  target refuses automated access in practice, so a two-step fallback fails
+  twice.
 
 **~16.5 working days.** Phases 2–5 largely port proven logic and should beat
 estimate; 1, 7 and 9 are the genuinely new work — Phase 1 carries the

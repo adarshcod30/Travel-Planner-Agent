@@ -11,6 +11,7 @@ changed.
 """
 
 from typing import Any
+from uuid import UUID, uuid5
 
 from fastapi import FastAPI
 
@@ -18,6 +19,24 @@ from travel_planner.agents import AGENT_REGISTRY
 from travel_planner.core.config import get_settings
 
 app = FastAPI()
+
+#: Aegra derives each default assistant's id as uuid5(namespace, graph_id) and
+#: looks assistants up strictly by that id — `graph_id` is only the assistant's
+#: name, so passing "v5_mcp" where an assistant_id is expected 404s. Resolving
+#: it here means a client gets the usable id in the same response as the version
+#: metadata, instead of having to search first and join the two itself.
+#: The namespace is read from Aegra when available and falls back to the
+#: published constant so this route still works if the import moves.
+try:  # pragma: no cover - exercised only when running inside Aegra
+    from aegra_api.constants import ASSISTANT_NAMESPACE_UUID as _NS
+except ImportError:  # pragma: no cover
+    _NS = UUID("6ba7b821-9dad-11d1-80b4-00c04fd430c8")
+
+
+def assistant_id_for(graph_id: str) -> str:
+    """The assistant id Aegra registers for a graph key."""
+    return str(uuid5(_NS, graph_id))
+
 
 #: Presentation metadata for the five graphs. `graph_id` is the Aegra
 #: assistant id, so a client can pass it straight through to a run.
@@ -126,6 +145,9 @@ VERSIONS: list[dict[str, Any]] = [
         ),
     },
 ]
+
+for _v in VERSIONS:
+    _v["assistant_id"] = assistant_id_for(_v["graph_id"])
 
 VERSION_BY_ID = {v["graph_id"]: v for v in VERSIONS}
 

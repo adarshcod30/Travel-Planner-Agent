@@ -64,14 +64,70 @@ def _header(headers: dict[bytes, bytes], name: bytes) -> str:
     return ""
 
 
-@auth.on
-async def owns_resource(ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
-    """Stamp the owner on writes and filter reads to that owner.
+# --------------------------------------------------------------------------
+# Authorization
+#
+# The scope here is deliberate, and getting it wrong fails silently.
+#
+# Threads, runs and crons are user data: each belongs to whoever created it,
+# and one caller must not read or resume another's. Returning a filter dict
+# makes Aegra use it both as the metadata stamped on create and as the
+# predicate applied on search.
+#
+# Assistants are NOT user data. Aegra creates one per graph at startup, owned
+# by "system" and carrying no `owner` metadata — they are five server-defined
+# graphs, identical for every caller. A global `@auth.on` that filters
+# everything by owner therefore matches zero assistants and makes the entire
+# API's graph list invisible, while /health stays green and
+# `POST /assistants/search` returns a perfectly valid empty list. Assistants
+# are left readable, with only the mutating operations restricted.
+# --------------------------------------------------------------------------
 
-    Returning a filter dict makes Aegra apply it as both the metadata written
-    on create and the predicate applied on search, so a caller cannot read or
-    resume another caller's thread.
+
+def _own(ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
+    """Stamp the owner onto the payload and return the matching read filter.
+
+    `setdefault` is wrong here: clients routinely send `metadata: null`
+    explicitly, and `setdefault` only fills a key that is *absent*, so it
+    happily returns None and the next line raises. The key has to be checked
+    for a None value, not just for presence.
     """
-    metadata = value.setdefault("metadata", {})
+    metadata = value.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+        value["metadata"] = metadata
     metadata["owner"] = ctx.user.identity
+    return {"owner": ctx.user.identity}
+
+
+@auth.on.threads
+async def owns_threads(ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
+    """Threads, and the runs inside them, belong to their creator."""
+    return _own(ctx, value)
+
+
+@auth.on.crons
+async def owns_crons(ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
+    """Scheduled runs belong to whoever scheduled them."""
+    return _own(ctx, value)
+
+
+@auth.on.store
+async def owns_store(ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
+    """Anything written to the semantic store is scoped to its writer."""
+    return _own(ctx, value)
+
+
+@auth.on.assistants.create
+async def restrict_assistant_create(
+    ctx: Auth.types.AuthContext, value: dict[str, Any]
+) -> dict[str, str]:
+    """A caller-created assistant is theirs; the server's defaults stay public."""
+    return _own(ctx, value)
+
+
+@auth.on.assistants.delete
+async def restrict_assistant_delete(
+    ctx: Auth.types.AuthContext, value: dict[str, Any]
+) -> dict[str, str]:
     return {"owner": ctx.user.identity}

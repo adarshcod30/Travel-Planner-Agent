@@ -185,6 +185,27 @@ def test_render_full_state_has_every_section():
     assert "The packing step could not complete" in md
 
 
+def test_budget_shows_per_day_and_per_person():
+    """Arithmetic a reader budgets against — not worth a model call."""
+    md = render_plan_markdown(_full_state())
+    assert "390 USD per day" in md, md[md.find("## Budget") :][:300]
+    assert "195 USD per person per day" in md
+
+
+def test_budget_omits_per_person_for_a_solo_trip():
+    state = {**_full_state(), "travelers": 1}
+    md = render_plan_markdown(state)
+    assert "per day" in md
+    assert "per person per day" not in md
+
+
+def test_budget_without_days_omits_the_breakdown():
+    state = {**_full_state(), "days": None}
+    md = render_plan_markdown(state)
+    assert "## Budget" in md
+    assert "per day" not in md
+
+
 def test_render_empty_state_does_not_crash():
     md = render_plan_markdown({})
     assert md.startswith("# Travel Plan: Your trip")

@@ -29,11 +29,25 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     aws_profile: str | None = None
 
-    bedrock_model_tier_high: str = Field(description="Reasoning-heavy agents")
-    bedrock_model_tier_mid: str = Field(description="Moderate agents")
-    bedrock_model_tier_low: str = Field(description="Extraction-shaped agents")
+    # Defaults, not requirements. These are cross-region inference profile IDs,
+    # not secrets, and they are the ones this project was verified against — so
+    # the package imports and the entire test suite runs on a machine with no
+    # .env at all. Without defaults the tests pass locally purely because a
+    # developer happens to have one, and fail everywhere else. Override in .env
+    # for another account or region; scripts/resolve_bedrock_models.sh prints
+    # what an account actually exposes.
+    bedrock_model_tier_high: str = Field(
+        default="us.amazon.nova-pro-v1:0", description="Reasoning-heavy agents"
+    )
+    bedrock_model_tier_mid: str = Field(
+        default="us.amazon.nova-lite-v1:0", description="Moderate agents"
+    )
+    bedrock_model_tier_low: str = Field(
+        default="us.amazon.nova-micro-v1:0", description="Extraction-shaped agents"
+    )
     bedrock_model_fallback: str = Field(
-        description="Per-agent fallback for unreliable structured output"
+        default="us.meta.llama3-3-70b-instruct-v1:0",
+        description="Per-agent fallback for unreliable structured output",
     )
 
     # maxTokens is mandatory on every call: unset, Bedrock reserves the model
@@ -141,4 +155,4 @@ def get_settings() -> Settings:
     Under Aegra the server has already exported `.env`, so this is a no-op there.
     """
     load_dotenv(override=False)
-    return Settings()  # type: ignore[call-arg]  # required fields come from the environment
+    return Settings()

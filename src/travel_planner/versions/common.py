@@ -163,7 +163,7 @@ def render_plan_markdown(state: TripState) -> str:
 
     if b := state.get("budget"):
         c = b.currency
-        parts.append(
+        budget_md = (
             "## Budget\n"
             "| Category | Amount |\n|---|---|\n"
             f"| Hotel | {_money(b.hotel, c)} |\n"
@@ -173,6 +173,17 @@ def render_plan_markdown(state: TripState) -> str:
             f"| Miscellaneous | {_money(b.miscellaneous, c)} |\n"
             f"| **Total** | **{_money(b.total, c)}** |"
         )
+        # The per-day and per-person figures are what a reader actually budgets
+        # against, and they are arithmetic — no reason to spend a model call, or
+        # to trust one, for a division.
+        days = state.get("days")
+        travelers = state.get("travelers") or 1
+        if days:
+            per_day = b.total / days
+            budget_md += f"\n\n{_money(per_day, c)} per day"
+            if travelers > 1:
+                budget_md += f" · {_money(per_day / travelers, c)} per person per day"
+        parts.append(budget_md)
 
     if lc := state.get("customs"):
         parts.append(

@@ -107,12 +107,12 @@ From the measured runs:
 
 | Version | Tokens | Notes |
 |---|---|---|
-| v1 | ~2,700 | 2 agents |
+| v1 | 2,656 | 2 agents |
 | v2 | 8,921 | 6 agents |
-| v3 | ~11,600 | 9 agents incl. audit |
+| v3 | 14,376 | 9 agents incl. audit |
 | v5 | 24,692 | 9 agents + research notes in every prompt |
 
-v5 roughly doubles v3's tokens, and the reason is structural rather than
+v5 adds roughly 70% to v3's tokens, and the reason is structural rather than
 incidental: the research notes are prepended to **every** specialist's prompt.
 Grounding is not free, and `NOTE_EXCERPT_CHARS` in `research.py` is the dial —
 each character is paid for once per downstream agent.

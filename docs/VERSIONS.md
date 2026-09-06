@@ -157,10 +157,10 @@ advancing the chain to Bing.
 |---|---|---|---|---|
 | Wall clock | 7.1s | 8.8s | 11.9s | 21.9s |
 | Agent calls | 2 | 6 | 9 | 9 |
-| Tokens | ~2,700 | 8,921 | ~11,600 | 24,692 |
+| Tokens | 2,656 | 8,921 | 14,376 | 24,692 |
 | Grounded in real data | no | no | no | **yes** |
 | Survives a human walking away | no | no | no | **yes** (v4 too) |
 
 The honest summary: v2 buys real research for almost no wall clock. v3 buys
 self-correction for ~3s. v4 buys human control for whatever the human costs. v5
-buys ground truth for roughly double the tokens and double the wall clock.
+buys ground truth for roughly 1.7x the tokens and double the wall clock.

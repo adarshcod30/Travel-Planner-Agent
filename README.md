@@ -33,9 +33,9 @@ Real runs against Amazon Nova on Bedrock, through the running Aegra server:
 
 | Version | Wall clock | Agent time | Agent calls | Tokens |
 |---|---|---|---|---|
-| v1 | 7.1s | 7.0s | 2 | ~2,700 |
+| v1 | 7.1s | 7.0s | 2 | 2,656 |
 | v2 | 8.8s | 12.9s | 6 | 8,921 |
-| v3 | 11.9s | 17.8s | 9 | ~11,600 |
+| v3 | 11.9s | 17.8s | 9 | 14,376 |
 | v5 | 21.9s | 18.7s | 9 | 24,692 |
 
 v2 and v3 run **more agent-seconds than wall-clock seconds** — that difference

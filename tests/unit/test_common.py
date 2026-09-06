@@ -200,6 +200,21 @@ def test_render_partial_state_skips_missing_sections():
     assert "## Budget" not in md
 
 
+def test_research_sources_show_provenance_not_raw_pages():
+    """The reader gets the source line; the specialists got the page excerpt."""
+    md = render_plan_markdown(
+        {
+            "research_notes": [
+                "Live web research via wikivoyage:\n### Page\n- Page URL: https://x\n```yaml\n- generic\n```",
+                "Weather reference (travel-mcp): {...}",
+            ]
+        }
+    )
+    assert "- Live web research via wikivoyage:" in md
+    assert "```yaml" not in md, "raw page snapshots must not reach the finished plan"
+    assert "### Page" not in md
+
+
 def test_finalize_node_writes_final_plan():
     out = finalize_node(_full_state())
     assert set(out) == {"final_plan"}

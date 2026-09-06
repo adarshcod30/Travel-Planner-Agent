@@ -203,7 +203,11 @@ def render_plan_markdown(state: TripState) -> str:
         parts.append("\n".join(lines))
 
     if notes := state.get("research_notes"):
-        parts.append("## Research sources\n" + "\n".join(f"- {n}" for n in notes))
+        # Only the provenance line of each note. The full note carries a page
+        # excerpt — thousands of characters of raw accessibility tree — which is
+        # exactly what a specialist needs in its prompt and exactly what a reader
+        # of the finished plan does not.
+        parts.append("## Research sources\n" + "\n".join(f"- {n.split(chr(10))[0]}" for n in notes))
 
     if errs := state.get("errors"):
         lines = ["## Notes"]

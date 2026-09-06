@@ -6,9 +6,12 @@ from travel_planner.core.config import Settings, get_settings
 from travel_planner.tools.mcp.browser import (
     BLOCK_SIGNALS,
     BlockedError,
-    browse_with_fallback,
+    browse_chain,
     looks_blocked,
     mcp_text,
+    research_destination,
+    research_hotels,
+    snapshot_body,
 )
 from travel_planner.tools.mcp.client import McpToolset, build_connections
 
@@ -121,6 +124,14 @@ class _FakeTool:
         return outcome
 
 
+def _page(body: str) -> str:
+    """A Playwright-shaped snapshot with `body` as the accessibility tree."""
+    return "### Page - Page URL: https://x ### Snapshot ```yaml\n" + body + "\n```"
+
+
+REAL_PAGE = _page("\n".join(f'  - link "result {i}" [ref=e{i}]' for i in range(40)))
+
+
 def _toolset(nav_outcomes, snap_outcomes):
     ts = McpToolset()
     ts.tools = {
@@ -130,42 +141,73 @@ def _toolset(nav_outcomes, snap_outcomes):
     return ts
 
 
-async def test_primary_success_reports_no_fallback():
-    ts = _toolset(["ok"], ["Kyoto travel guide with temples"])
-    r = await browse_with_fallback(
-        ts, primary_url="https://a", fallback_url="https://b", primary_label="google"
+CHAIN = [("primary", "https://a"), ("second", "https://b"), ("third", "https://c")]
+
+
+async def test_first_target_wins():
+    ts = _toolset(["ok"], [REAL_PAGE])
+    r = await browse_chain(ts, CHAIN)
+    assert r["ok"] and r["fallback_used"] is False and r["source_used"] == "primary"
+    assert r["attempts"] == []
+
+
+async def test_block_advances_the_chain_and_records_it():
+    ts = _toolset(["ok", "ok"], [_page("please verify you are a human"), REAL_PAGE])
+    r = await browse_chain(ts, CHAIN)
+    assert r["ok"] and r["fallback_used"] and r["source_used"] == "second"
+    assert r["attempts"] == [{"target": "primary", "outcome": "blocked"}]
+
+
+async def test_empty_page_is_treated_as_a_block():
+    """A real URL with an empty tree: HTTP 200, nothing rendered."""
+    ts = _toolset(["ok", "ok"], [_page("  "), REAL_PAGE])
+    r = await browse_chain(ts, CHAIN)
+    assert r["source_used"] == "second"
+    assert r["attempts"][0]["outcome"] == "blocked"
+
+
+async def test_about_blank_is_treated_as_a_block():
+    ts = _toolset(
+        ["ok", "ok"], ["### Page - Page URL: about:blank ### Snapshot ```yaml  ```", REAL_PAGE]
     )
-    assert r["ok"] and r["fallback_used"] is False and r["source_used"] == "google"
+    r = await browse_chain(ts, CHAIN)
+    assert r["source_used"] == "second"
 
 
-async def test_block_triggers_the_fallback_and_says_so():
-    ts = _toolset(["ok", "ok"], ["please verify you are a human", "real results here"])
-    r = await browse_with_fallback(
-        ts, primary_url="https://a", fallback_url="https://b", primary_label="google"
-    )
-    assert r["ok"] and r["fallback_used"] is True and r["source_used"] == "duckduckgo"
-    assert "real results" in r["content_excerpt"]
+async def test_transport_error_advances_the_chain():
+    ts = _toolset([RuntimeError("connection reset"), "ok"], [REAL_PAGE])
+    r = await browse_chain(ts, CHAIN)
+    assert r["ok"] and r["source_used"] == "second"
+    assert "RuntimeError" in r["attempts"][0]["outcome"]
 
 
-async def test_transport_error_also_triggers_the_fallback():
-    ts = _toolset([RuntimeError("connection reset"), "ok"], ["real results"])
-    r = await browse_with_fallback(
-        ts, primary_url="https://a", fallback_url="https://b", primary_label="booking.com"
-    )
-    assert r["ok"] and r["fallback_used"] is True
-
-
-async def test_both_paths_failing_degrades_rather_than_raises():
-    ts = _toolset([RuntimeError("x"), RuntimeError("y")], [])
-    r = await browse_with_fallback(
-        ts, primary_url="https://a", fallback_url="https://b", primary_label="google"
-    )
-    assert r["ok"] is False and "error" in r and r["content_excerpt"] == ""
+async def test_every_target_failing_degrades_rather_than_raises():
+    ts = _toolset(["ok"] * 3, [_page("captcha")] * 3)
+    r = await browse_chain(ts, CHAIN)
+    assert r["ok"] is False and r["content_excerpt"] == ""
+    assert [a["target"] for a in r["attempts"]] == ["primary", "second", "third"]
 
 
 async def test_missing_browser_tools_degrade_rather_than_raise():
-    r = await browse_with_fallback(
-        McpToolset(), primary_url="https://a", fallback_url="https://b", primary_label="g"
-    )
+    r = await browse_chain(McpToolset(), CHAIN)
     assert r["ok"] is False
     assert BlockedError  # referenced so the import is meaningful to a reader
+
+
+async def test_destination_chain_leads_with_wikivoyage():
+    ts = _toolset(["ok"], [REAL_PAGE])
+    r = await research_destination(ts, "Kyoto", "temples")
+    assert r["source_used"] == "wikivoyage"
+    assert "wikivoyage.org/wiki/Kyoto" in r["url_used"]
+
+
+async def test_hotel_chain_leads_with_booking():
+    ts = _toolset(["ok"], [REAL_PAGE])
+    r = await research_hotels(ts, "Kyoto, Japan", 3, "mid-range", 2)
+    assert r["source_used"] == "booking.com"
+    assert "booking.com" in r["url_used"]
+
+
+def test_snapshot_body_strips_the_envelope():
+    assert snapshot_body(_page('  - link "a"')) == '- link "a"'
+    assert snapshot_body("no envelope here") == "no envelope here"

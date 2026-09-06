@@ -86,17 +86,27 @@ def research_gate(state: TripState) -> dict[str, Any]:
     return None  # type: ignore[return-value]
 
 
-async def _research(state: TripState) -> dict[str, Any]:
-    if research_gate(state) == {}:
-        log.debug("research_skipped", reason="revision kept the destination")
-        return {}
-    return await research_node(state)
+def make_research_node(settings: Settings | None = None):
+    """Bind the run's settings to the research node.
+
+    The binding is the point: without it the node would call `get_settings()`
+    and quietly ignore whatever the factory resolved for this request.
+    """
+
+    async def _research(state: TripState) -> dict[str, Any]:
+        if research_gate(state) == {}:
+            log.debug("research_skipped", reason="revision kept the destination")
+            return {}
+        return await research_node(state, settings)
+
+    _research.__name__ = "research"
+    return _research
 
 
-def build(*, max_iterations: int | None = None) -> StateGraph:
+def build(*, max_iterations: int | None = None, settings: Settings | None = None) -> StateGraph:
     """v4's topology with a research node between destination and the fan-out."""
     g = StateGraph(TripState)
-    g.add_node("research", _research)
+    g.add_node("research", make_research_node(settings))
     add_specialist_dag(g, max_iterations=max_iterations, fanout_source="research")
     g.add_edge("destination", "research")
 
@@ -114,4 +124,6 @@ async def make_graph(config: RunnableConfig | None = None):
     """Aegra factory. Invoked per request; the result is never cached."""
     settings = settings_for_run(config)
     log.info("v5_graph_built", mcp_mode=settings.mcp_mode, servers=settings.enabled_mcp_servers)
-    return build(max_iterations=settings.max_orchestrator_iterations).compile(name=VERSION)
+    return build(max_iterations=settings.max_orchestrator_iterations, settings=settings).compile(
+        name=VERSION
+    )

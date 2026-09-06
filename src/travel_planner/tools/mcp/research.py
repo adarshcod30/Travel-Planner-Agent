@@ -15,9 +15,14 @@ every agent. Doing the gathering once, deterministically, up front is both more
 reliable and cheaper, and it means a failed browse degrades the research rather
 than hanging an agent.
 
+The stateless servers and the browser are handled differently on purpose:
+travel-mcp, fetch and filesystem answer each call independently, so they run
+through a session-per-call toolset; the browser needs one session held across
+navigate and snapshot, so it runs inside `browser_session()`.
+
 Nothing here can fail the run. Every lookup is independent, every failure is
-recorded as a note, and a graph with zero reachable MCP servers still produces
-a plan — just one whose notes say the research was unavailable.
+recorded as a note, and a graph with zero reachable MCP servers still produces a
+plan — just one whose notes say the research was unavailable.
 """
 
 import asyncio
@@ -27,7 +32,7 @@ from travel_planner.core.config import Settings, get_settings
 from travel_planner.core.logging import get_logger
 from travel_planner.core.state import TripState
 from travel_planner.tools.mcp.browser import mcp_text, research_destination, research_hotels
-from travel_planner.tools.mcp.client import McpToolset, load_toolset
+from travel_planner.tools.mcp.client import McpToolset, browser_session, load_toolset
 
 log = get_logger(__name__)
 
@@ -67,16 +72,27 @@ async def gather_research(state: TripState, settings: Settings | None = None) ->
     level = state.get("budget_level") or "mid-range"
     travelers = state.get("travelers") or 2
     season = state.get("season") or ""
+    interests = " ".join(state.get("interests") or [])
 
     toolset = await load_toolset(settings)
-    if not toolset.tools:
-        return [
-            f"Research: no MCP servers were reachable ({', '.join(toolset.failed) or 'none configured'})."
-        ]
 
-    results = await asyncio.gather(
-        research_destination(toolset, f"{place} {' '.join(state.get('interests') or [])}", timeout),
-        research_hotels(toolset, place, nights, level, travelers, timeout),
+    async def browse() -> tuple[Any, Any]:
+        """Both browser lookups, sequentially, inside one held session.
+
+        Sequential rather than gathered: they share a single browser, and two
+        navigations racing in the same tab would clobber each other.
+        """
+        async with browser_session(settings) as browser:
+            if browser is None:
+                return None, None
+            web = await research_destination(browser, dest.city, interests, timeout=timeout)
+            hotels = await research_hotels(
+                browser, place, nights, level, travelers, timeout=timeout
+            )
+            return web, hotels
+
+    browse_result, weather, visa, flights = await asyncio.gather(
+        browse(),
         _call(
             toolset,
             ("get_weather_forecast",),
@@ -97,18 +113,31 @@ async def gather_research(state: TripState, settings: Settings | None = None) ->
         ),
         return_exceptions=True,
     )
-    web, hotels, weather, visa, flights = results
+    web, hotels = browse_result if isinstance(browse_result, tuple) else (None, None)
 
-    notes: list[str] = [f"Research performed live via MCP ({', '.join(toolset.servers)})."]
+    used = list(toolset.servers)
+    if web is not None:
+        used.append("playwright")
+    if not used:
+        failed = ", ".join(toolset.failed) or "none configured"
+        return [f"Research: no MCP servers were reachable ({failed})."]
+
+    notes: list[str] = [f"Research performed live via MCP ({', '.join(used)})."]
 
     def _add_browse(label: str, r: Any) -> None:
+        if r is None:
+            notes.append(f"{label}: the browser was unavailable this run.")
+            return
         if isinstance(r, BaseException) or not isinstance(r, dict):
             notes.append(f"{label}: lookup failed.")
             return
+        tried = ", ".join(a["target"] for a in r.get("attempts", []))
         if not r.get("ok"):
-            notes.append(f"{label}: unavailable ({r.get('error', 'unknown error')}).")
+            notes.append(f"{label}: every source refused automated access (tried {tried}).")
             return
-        via = f"{r['source_used']}{' (fallback — the primary site blocked automated access)' if r['fallback_used'] else ''}"
+        via = r["source_used"]
+        if r["fallback_used"]:
+            via += f" — earlier targets refused automated access: {tried}"
         notes.append(f"{label} via {via}:\n{r['content_excerpt'][:NOTE_EXCERPT_CHARS]}")
 
     _add_browse("Live web research", web)
@@ -131,12 +160,18 @@ async def gather_research(state: TripState, settings: Settings | None = None) ->
     return notes
 
 
-async def research_node(state: TripState) -> dict[str, Any]:
-    """Graph node. Always returns; never raises."""
+async def research_node(state: TripState, settings: Settings | None = None) -> dict[str, Any]:
+    """Graph node. Always returns; never raises.
+
+    `settings` is threaded in from the v5 factory so a per-run override — which
+    MCP servers to use, which transport — actually reaches the lookups. Falling
+    back to the process settings here would silently ignore the run's config
+    while the factory logged that it had applied it.
+    """
     try:
-        notes = await gather_research(state)
+        notes = await gather_research(state, settings)
     except Exception as exc:
-        log.error("research_failed", error=f"{type(exc).__name__}: {str(exc)[:200]}")
+        log.error("research_failed", error=f"{type(exc).__name__}: {str(exc)[:200]}", exc_info=True)
         notes = [f"Research: unavailable this run ({type(exc).__name__})."]
     log.info("research_complete", notes=len(notes))
     return {"research_notes": notes}

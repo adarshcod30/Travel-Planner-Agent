@@ -18,11 +18,11 @@ def v5():
 
 @pytest.fixture
 def no_research(monkeypatch, v5):
-    """Replace the MCP research pass with a scripted note; count invocations."""
+    """Replace the MCP research pass with a scripted note; record settings seen."""
     calls = []
 
-    async def fake_research(state):
-        calls.append(state.get("destination"))
+    async def fake_research(state, settings=None):
+        calls.append((state.get("destination"), settings))
         return {"research_notes": [f"scripted research for {state['destination'].city}"]}
 
     monkeypatch.setattr(v5, "research_node", fake_research)
@@ -104,6 +104,21 @@ async def test_factory_returns_a_compiled_graph(v5):
     app = await v5.make_graph({"configurable": {"mcp_servers": ["travel"]}})
     assert app.name == "v5_mcp"
     assert "research" in app.get_graph().nodes
+
+
+async def test_per_run_settings_reach_the_research_node(v5, monkeypatch):
+    """The factory resolving settings is worthless if the node ignores them."""
+    seen = {}
+
+    async def spy(state, settings=None):
+        seen["servers"] = settings.enabled_mcp_servers if settings else None
+        return {"research_notes": ["x"]}
+
+    monkeypatch.setattr(v5, "research_node", spy)
+    FakeModel(reviews=[APPROVED]).install(monkeypatch)
+    app = await v5.make_graph({"configurable": {"mcp_servers": ["travel"]}})
+    await app.ainvoke({"request": "Kyoto", "days": 2}, {"configurable": {"thread_id": "v5-cfg"}})
+    assert seen["servers"] == ("travel",), "the run's override must reach the lookups"
 
 
 async def test_factory_accepts_no_config(v5):

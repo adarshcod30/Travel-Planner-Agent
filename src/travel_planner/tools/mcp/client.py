@@ -13,20 +13,31 @@ the others have no meaningful persistent mode here). The browser and anything
 it navigated to survive across the whole run, at the cost of a second process
 to manage.
 
-`get_tools()` on `MultiServerMCPClient` opens and closes a session per call in
-stdio mode, so tools returned here are safe to hold across a run without
-pinning a session open — which is what lets the v5 factory build its graph once
-per request without leaking subprocesses.
+**Two ways to get tools, and the difference matters.**
+
+`load_toolset()` uses `get_tools()`, which opens and closes a session per tool
+call. That is exactly right for stateless servers — travel-mcp, fetch,
+filesystem — where every call is independent, and it means no subprocess is
+held open between uses.
+
+It is exactly wrong for a browser. `browser_navigate` and `browser_snapshot`
+are two calls that only make sense against the *same* session: with a session
+per call, the navigate happens in one browser and the snapshot reads a second,
+freshly-launched one, which returns `about:blank` every time. Nothing errors —
+the tools succeed, the page is just empty. `browser_session()` therefore holds
+one session open across the whole browsing sequence.
 """
 
 import asyncio
 import shutil
 import sys
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any
 
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
 
 from travel_planner.core.config import Settings, get_settings
 from travel_planner.core.logging import get_logger
@@ -137,15 +148,68 @@ class McpToolset:
         return len(self.tools)
 
 
+@asynccontextmanager
+async def browser_session(settings: Settings | None = None) -> AsyncIterator[McpToolset | None]:
+    """Hold one Playwright MCP session open and yield tools bound to it.
+
+    Yields None when Playwright is not configured or will not start, so a caller
+    can degrade instead of branching on exceptions. The session — and the browser
+    it owns — closes when the block exits, tying the browser's lifetime to the
+    run rather than to the server process.
+
+    Acquisition and use are separated on purpose. Wrapping the `yield` in the
+    same `try/except` would catch exceptions raised by the *caller's* block,
+    re-enter the generator, and yield a second time — which raises "generator
+    didn't stop after athrow()" and buries the caller's real error. Only setup
+    failures are handled here; anything the body raises propagates untouched.
+    """
+    settings = settings or get_settings()
+    conn = build_connections(settings).get("playwright")
+    if conn is None:
+        log.warning(
+            "browser_unavailable", reason="playwright is not enabled or its launcher is missing"
+        )
+        yield None
+        return
+
+    stack = AsyncExitStack()
+    try:
+        client = MultiServerMCPClient({"playwright": conn})
+        session = await stack.enter_async_context(client.session("playwright"))
+        tools = await asyncio.wait_for(
+            load_mcp_tools(session), timeout=settings.mcp_tool_timeout_seconds
+        )
+    except Exception as exc:
+        await stack.aclose()
+        log.warning("browser_session_failed", error=f"{type(exc).__name__}: {str(exc)[:200]}")
+        yield None
+        return
+
+    toolset = McpToolset()
+    toolset.by_server["playwright"] = [t.name for t in tools]
+    for t in tools:
+        toolset.tools[t.name] = t
+    log.info("browser_session_open", tools=len(tools))
+
+    try:
+        yield toolset
+    finally:
+        await stack.aclose()
+        log.info("browser_session_closed")
+
+
 async def load_toolset(settings: Settings | None = None) -> McpToolset:
     """Connect to every enabled server and collect its tools.
 
     Servers are loaded concurrently and independently: each gets its own
     client so a server that hangs or crashes on startup is isolated to its own
     entry in `failed`.
+
+    Playwright is deliberately excluded — it needs a held session, which is
+    what `browser_session()` provides.
     """
     settings = settings or get_settings()
-    connections = build_connections(settings)
+    connections = {k: v for k, v in build_connections(settings).items() if k != "playwright"}
     toolset = McpToolset()
     if not connections:
         log.warning("mcp_no_servers_configured")

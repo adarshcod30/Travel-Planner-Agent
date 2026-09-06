@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+/*
+ * One palette, defined once, consumed through Tailwind's theme so components
+ * never hard-code a hex value. Dark is the default because the app is mostly
+ * read as a live console — dense telemetry on a light ground is fatiguing.
+ */
+@theme {
+  --color-ink: #0a0d14;
+  --color-surface: #12161f;
+  --color-raised: #1a2029;
+  --color-line: #262d39;
+  --color-muted: #8a94a6;
+  --color-body: #c9d1de;
+  --color-bright: #f2f5fa;
+
+  --color-accent: #5eead4;
+  --color-accent-dim: #14b8a6;
+  --color-warn: #fbbf24;
+  --color-danger: #f87171;
+  --color-info: #7dd3fc;
+
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+}
+
+html,
+body {
+  background: var(--color-ink);
+  color: var(--color-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A thin scrollbar keeps the telemetry panes from feeling boxed in. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Markdown produced by the planner, rendered without a heavyweight library. */
+.plan h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-bright);
+  margin: 0 0 0.5rem;
+}
+.plan h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  margin: 1.75rem 0 0.6rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--color-line);
+}
+.plan h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-bright);
+  margin: 1.1rem 0 0.35rem;
+}
+.plan p {
+  margin: 0.5rem 0;
+  line-height: 1.65;
+}
+.plan ul {
+  margin: 0.5rem 0;
+  padding-left: 1.1rem;
+  list-style: disc;
+}
+.plan li {
+  margin: 0.25rem 0;
+  line-height: 1.6;
+}
+.plan strong {
+  color: var(--color-bright);
+  font-weight: 600;
+}
+.plan em {
+  color: var(--color-muted);
+}
+.plan hr {
+  border: 0;
+  border-top: 1px solid var(--color-line);
+  margin: 1.5rem 0;
+}
+.plan table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.875rem;
+}
+.plan th,
+.plan td {
+  border: 1px solid var(--color-line);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+.plan th {
+  background: var(--color-raised);
+  color: var(--color-bright);
+  font-weight: 600;
+}
+.plan code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-raised);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+
+@keyframes pulse-ring {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.running-dot {
+  animation: pulse-ring 1.2s ease-in-out infinite;
+}

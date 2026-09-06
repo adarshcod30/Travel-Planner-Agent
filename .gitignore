@@ -73,3 +73,8 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# ---- Next.js frontend ----
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local

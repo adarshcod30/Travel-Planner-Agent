@@ -1,0 +1,25 @@
+{
+  "dependencies": ["./src"],
+
+  "graphs": {
+    "v1_linear": "./src/travel_planner/versions/v1_linear/graph.py:graph",
+    "v2_parallel": "./src/travel_planner/versions/v2_parallel/graph.py:graph",
+    "v3_orchestrator": "./src/travel_planner/versions/v3_orchestrator/graph.py:graph",
+    "v4_hitl": "./src/travel_planner/versions/v4_hitl/graph.py:graph",
+    "v5_mcp": "./src/travel_planner/versions/v5_mcp/graph.py:make_graph"
+  },
+
+  "auth": {
+    "path": "./src/travel_planner/auth/handler.py:auth",
+    "disable_studio_auth": false
+  },
+
+  "http": {
+    "app": "./src/travel_planner/routes/custom.py:app",
+    "enable_custom_route_auth": false,
+    "cors": {
+      "allow_origins": ["http://localhost:3000", "http://127.0.0.1:3000"],
+      "allow_credentials": true
+    }
+  }
+}

@@ -48,6 +48,13 @@ def render_trip_context(state: TripState) -> str:
         lines.append(f"Original request: {req}")
     if fb := state.get("human_feedback"):
         lines.append(f"Reviewer feedback to incorporate: {fb}")
+    if notes := state.get("research_notes"):
+        # v5 only. Real, freshly-gathered material outranks the model's priors,
+        # so it is stated as such rather than offered as background.
+        lines.append(
+            "\nLive research gathered for this trip — prefer these facts over your own "
+            "recollection where they conflict:\n" + "\n\n".join(notes)
+        )
     return "\n".join(lines)
 
 

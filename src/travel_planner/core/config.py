@@ -63,9 +63,21 @@ class Settings(BaseSettings):
 
     # --- MCP (v5) ----------------------------------------------------------------
     mcp_mode: McpMode = "stdio"
+    mcp_enabled_servers: str = "playwright,filesystem,fetch,travel"
+    mcp_tool_timeout_seconds: float = 45.0
+
     playwright_mcp_url: str = "http://localhost:8931/mcp"
     playwright_mcp_headless: bool = True
+    playwright_mcp_command: str = "npx"
+    playwright_mcp_args: str = "-y @playwright/mcp@latest --isolated"
+
     filesystem_mcp_root: str = "./data/workspace"
+    filesystem_mcp_command: str = "npx"
+    filesystem_mcp_args: str = "-y @modelcontextprotocol/server-filesystem"
+
+    fetch_mcp_command: str = "uvx"
+    fetch_mcp_args: str = "mcp-server-fetch"
+
     travel_mcp_command: str = "python"
     travel_mcp_args: str = "-m travel_mcp.server"
 
@@ -94,6 +106,25 @@ class Settings(BaseSettings):
     @property
     def travel_mcp_arg_list(self) -> list[str]:
         return self.travel_mcp_args.split()
+
+    @property
+    def playwright_mcp_arg_list(self) -> list[str]:
+        args = self.playwright_mcp_args.split()
+        if self.playwright_mcp_headless and "--headless" not in args:
+            args.append("--headless")
+        return args
+
+    @property
+    def filesystem_mcp_arg_list(self) -> list[str]:
+        return [*self.filesystem_mcp_args.split(), self.filesystem_mcp_root]
+
+    @property
+    def fetch_mcp_arg_list(self) -> list[str]:
+        return self.fetch_mcp_args.split()
+
+    @property
+    def enabled_mcp_servers(self) -> tuple[str, ...]:
+        return tuple(s.strip() for s in self.mcp_enabled_servers.split(",") if s.strip())
 
 
 @lru_cache(maxsize=1)

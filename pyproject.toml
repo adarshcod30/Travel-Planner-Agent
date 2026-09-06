@@ -35,8 +35,9 @@ server = [
 ]
 # The custom travel-mcp server, runnable standalone.
 mcp = [
-    "fastmcp>=2.0.0",
+    "fastmcp>=3.0.0",
     "httpx>=0.27.0",
+    "travel-mcp",
 ]
 dev = [
     "pytest>=8.0.0",
@@ -45,6 +46,12 @@ dev = [
     "ruff>=0.6.0",
     "mypy>=1.11.0",
 ]
+
+[tool.uv.workspace]
+members = ["mcp-servers/travel-mcp"]
+
+[tool.uv.sources]
+travel-mcp = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -69,7 +76,7 @@ ignore = [
 "tests/*" = ["N802"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "mcp-servers/travel-mcp/tests"]
 asyncio_mode = "auto"
 addopts = "-q --strict-markers"
 markers = [

@@ -1,0 +1,226 @@
+"""Nodes and helpers shared by every graph version.
+
+The versions differ in how specialists are wired — sequentially, in parallel,
+under an orchestrator, behind a human gate, over MCP — not in how a request is
+normalised on the way in or how a plan is rendered on the way out. Those two
+ends live here so they are identical across versions, which is what makes a
+cross-version comparison of the *middle* meaningful.
+"""
+
+from typing import Any
+
+from travel_planner.core.logging import get_logger
+from travel_planner.core.state import TripState
+
+log = get_logger(__name__)
+
+DEFAULT_DAYS = 3
+DEFAULT_TRAVELERS = 1
+DEFAULT_BUDGET_LEVEL = "mid-range"
+
+
+# ---------------------------------------------------------------------------
+# Intake
+# ---------------------------------------------------------------------------
+
+
+def intake_node(state: TripState) -> dict[str, Any]:
+    """Normalise the incoming request and fill defaults.
+
+    Deterministic by design. Interpreting a vague request ("somewhere warm")
+    is the destination agent's job; this node only guarantees every downstream
+    node sees well-formed values — clamped day counts, a known budget level, a
+    positive traveler count, interests as a list — and resets the orchestration
+    counter so a reused thread starts a fresh revision loop.
+    """
+    days = state.get("days") or DEFAULT_DAYS
+    days = max(1, min(int(days), 30))
+
+    travelers = state.get("travelers") or DEFAULT_TRAVELERS
+    travelers = max(1, min(int(travelers), 12))
+
+    level = (state.get("budget_level") or DEFAULT_BUDGET_LEVEL).strip().lower()
+    if level not in ("budget", "mid-range", "luxury"):
+        level = DEFAULT_BUDGET_LEVEL
+
+    raw_interests = state.get("interests") or []
+    if isinstance(raw_interests, str):
+        raw_interests = [i.strip() for i in raw_interests.split(",")]
+    interests = [i for i in (s.strip() for s in raw_interests) if i]
+
+    request = (state.get("request") or "").strip() or None
+
+    update: dict[str, Any] = {
+        "request": request,
+        "days": days,
+        "travelers": travelers,
+        "budget_level": level,
+        "interests": interests,
+        "season": (state.get("season") or "").strip() or None,
+        "iteration": 0,
+    }
+    # A reused thread carries the previous trip's outputs. Left in place they
+    # would leak into every prompt ("Weather report: 8-16 C" for the wrong
+    # city), so a new request starts from a clean slate. Resumed runs never
+    # re-enter intake, so this cannot disturb a paused human review.
+    update.update(dict.fromkeys(GENERATED_KEYS))
+    return update
+
+
+#: Everything a run produces, as opposed to what the caller supplies.
+GENERATED_KEYS: tuple[str, ...] = (
+    "destination",
+    "weather",
+    "attractions",
+    "budget",
+    "hotels",
+    "customs",
+    "packing",
+    "itinerary",
+    "review",
+    "orchestrator_decision",
+    "human_decision",
+    "research_notes",
+    "final_plan",
+)
+
+
+# ---------------------------------------------------------------------------
+# Finalize
+# ---------------------------------------------------------------------------
+
+
+def _money(x: float, currency: str = "USD") -> str:
+    return f"{x:,.0f} {currency}"
+
+
+def render_plan_markdown(state: TripState) -> str:
+    """Render whatever the state holds into one Markdown document.
+
+    Every section is optional. A version that never ran the packing agent, or
+    an agent that failed and was routed around, simply produces a document
+    without that section — the renderer never assumes a field exists.
+    """
+    parts: list[str] = []
+
+    dest = state.get("destination")
+    title = f"{dest.city}, {dest.country}" if dest else "Your trip"
+    days = state.get("days")
+    header = [f"# Travel Plan: {title}"]
+    meta = []
+    if days:
+        meta.append(f"**Duration:** {days} day{'s' if days != 1 else ''}")
+    if lvl := state.get("budget_level"):
+        meta.append(f"**Budget:** {lvl}")
+    if trav := state.get("travelers"):
+        meta.append(f"**Travelers:** {trav}")
+    if season := state.get("season"):
+        meta.append(f"**When:** {season}")
+    if ints := state.get("interests"):
+        meta.append(f"**Interests:** {', '.join(ints)}")
+    if meta:
+        header.append(" | ".join(meta))
+    if dest and dest.reason:
+        header.append(f"\n_{dest.reason}_")
+    parts.append("\n".join(header))
+
+    if w := state.get("weather"):
+        parts.append(
+            "## Weather\n"
+            f"{w.summary}\n\n"
+            f"**Temperature:** {w.temperature_range}\n\n"
+            f"**Wear:** {', '.join(w.clothing)}\n\n"
+            f"**Tips:** {'; '.join(w.tips)}"
+        )
+
+    if it := state.get("itinerary"):
+        lines = ["## Itinerary", f"_{it.summary}_", ""]
+        for d in it.days:
+            lines += [
+                f"### Day {d.day}",
+                f"- **Morning:** {d.morning}",
+                f"- **Afternoon:** {d.afternoon}",
+                f"- **Evening:** {d.evening}",
+            ]
+            if d.meals:
+                lines.append(f"- **Meals:** {', '.join(d.meals)}")
+            lines.append("")
+        parts.append("\n".join(lines).rstrip())
+
+    if a := state.get("attractions"):
+        lines = ["## Attractions"]
+        for x in a.attractions:
+            lines.append(f"- **{x.name}** ({x.category}, ~{x.duration_hours:g}h) — {x.description}")
+        parts.append("\n".join(lines))
+
+    if h := state.get("hotels"):
+        lines = ["## Where to stay"]
+        for x in h.hotels:
+            lines.append(
+                f"- **{x.name}** · {x.tier} · {_money(x.price_per_night)}/night · {x.rating:g}/5 — {x.note}"
+            )
+        parts.append("\n".join(lines))
+
+    if b := state.get("budget"):
+        c = b.currency
+        parts.append(
+            "## Budget\n"
+            "| Category | Amount |\n|---|---|\n"
+            f"| Hotel | {_money(b.hotel, c)} |\n"
+            f"| Food | {_money(b.food, c)} |\n"
+            f"| Transport | {_money(b.transport, c)} |\n"
+            f"| Activities | {_money(b.activities, c)} |\n"
+            f"| Miscellaneous | {_money(b.miscellaneous, c)} |\n"
+            f"| **Total** | **{_money(b.total, c)}** |"
+        )
+
+    if lc := state.get("customs"):
+        parts.append(
+            "## Local customs\n"
+            f"**Greetings:** {lc.greetings}\n\n"
+            f"**Tipping:** {lc.tipping}\n\n"
+            f"**Dress:** {lc.dress_code}\n\n"
+            f"**Do:** {'; '.join(lc.dos)}\n\n"
+            f"**Don't:** {'; '.join(lc.donts)}\n\n"
+            f"**Phrases:** {'; '.join(lc.phrases)}"
+        )
+
+    if p := state.get("packing"):
+        lines = ["## Packing list"]
+        for g in p.groups:
+            lines.append(f"**{g.category}:** {', '.join(g.items)}")
+        parts.append("\n".join(lines))
+
+    if r := state.get("review"):
+        lines = [f"## Review — {r.verdict.replace('_', ' ')}"]
+        lines.append(
+            f"Budget realistic: {'yes' if r.budget_realistic else 'no'} · Pacing reasonable: {'yes' if r.pacing_reasonable else 'no'}"
+        )
+        if r.issues:
+            lines.append("**Issues:** " + "; ".join(r.issues))
+        if r.suggestions:
+            lines.append("**Suggestions:** " + "; ".join(r.suggestions))
+        parts.append("\n".join(lines))
+
+    if notes := state.get("research_notes"):
+        parts.append("## Research sources\n" + "\n".join(f"- {n}" for n in notes))
+
+    if errs := state.get("errors"):
+        lines = ["## Notes"]
+        for e in errs:
+            lines.append(
+                f"- The {e.agent} step could not complete ({e.error_type}); this plan was assembled without it."
+            )
+        parts.append("\n".join(lines))
+
+    return "\n\n---\n\n".join(parts)
+
+
+def finalize_node(state: TripState) -> dict[str, Any]:
+    """Render the final plan. The last node of every version."""
+    log.info(
+        "finalize",
+        has_itinerary=state.get("itinerary") is not None,
+        errors=len(state.get("errors") or []),
+    )
+    return {"final_plan": render_plan_markdown(state)}

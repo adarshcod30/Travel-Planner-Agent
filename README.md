@@ -206,6 +206,34 @@ Open <http://localhost:3000>. Verify the backend on its own with:
 curl http://localhost:2026/health/deep
 ```
 
+## Letting other people use it
+
+```bash
+./scripts/run_aegra.sh        # terminal 1
+./scripts/serve_lan.sh        # terminal 2 — prints the shareable URL
+```
+
+Anyone on the same network opens `http://<your-ip>:3000`.
+
+**Only the frontend is exposed.** Aegra and PostgreSQL stay bound to loopback,
+because the browser never talks to Aegra — it calls `/api/aegra/...` on the
+Next.js origin and a server-side route handler forwards it. Your agent server,
+your database and your AWS credentials stay on localhost no matter who has the
+link. One port out, not three.
+
+Two things to know before sharing:
+
+- **There is no sign-in.** Anyone who opens the link can run the planner, and
+  every run spends from your AWS account. Share it on a network you trust.
+- **macOS will ask once** whether `node` may accept incoming connections. Allow
+  it, or the port stays unreachable from other machines. Guest Wi-Fi that
+  isolates clients blocks this regardless of any setting.
+
+For access beyond the LAN, put a tunnel in front of port 3000 — `cloudflared
+tunnel --url http://localhost:3000` gives a public HTTPS URL without touching
+your router. For anything lasting, deploy properly:
+[AEGRA_DEPLOYMENT.md](docs/AEGRA_DEPLOYMENT.md).
+
 ## Testing
 
 ```bash

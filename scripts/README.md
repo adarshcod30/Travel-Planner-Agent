@@ -6,6 +6,7 @@
 | `run_aegra.sh` | Apply migrations and serve all five graphs on port 2026. |
 | `run_all.sh` | The whole stack — PostgreSQL, Aegra and the frontend. |
 | `run_playwright_mcp.sh` | Standing Playwright MCP server, for `MCP_MODE=http` only. |
+| `serve_lan.sh` | Serve the frontend to other machines on the network. Exposes port 3000 only. |
 | `resolve_bedrock_models.sh` | Print the model IDs and inference profiles this account exposes. |
 
 None of them install packages; each says what is missing and how to get it.

@@ -88,6 +88,55 @@ by that id; the graph key is only the assistant's *name*. Resolve it from
 `/assistants/search` or read it from this project's `/versions` route, which
 returns `assistant_id` alongside the metadata for exactly this reason.
 
+## Exposing it to other people
+
+The proxy in the frontend decides the whole shape of this. Because the browser
+calls `/api/aegra/...` on the Next.js origin rather than Aegra directly, **only
+the frontend port is ever exposed.** Aegra, PostgreSQL and the AWS credentials
+stay on loopback.
+
+| Reach | How | Notes |
+|---|---|---|
+| Same network | `./scripts/serve_lan.sh` | Production build bound to `0.0.0.0:3000`; prints the URL |
+| Temporary public | `cloudflared tunnel --url http://localhost:3000` | HTTPS, no router changes, no open inbound port |
+| Permanent | nginx → `localhost:3000`, TLS via certbot | See the systemd unit below |
+
+Verify the shape rather than assuming it:
+
+```bash
+IP=$(ipconfig getifaddr en0)          # or `hostname -I | awk '{print $1}'` on Linux
+curl -o /dev/null -w '%{http_code}\n' http://$IP:3000            # 200
+curl -m 3 http://$IP:2026/health                                  # must refuse
+curl -m 3 http://$IP:5432                                         # must refuse
+```
+
+A `200` from the second command means Aegra is listening on a public interface —
+`aegra serve --host 127.0.0.1`, and let the frontend reach it.
+
+### There is no sign-in
+
+`AUTH_TYPE=noop` means anyone who reaches the frontend can run the planner, and
+every run spends from your AWS account. `AUTH_TYPE=token` protects **Aegra**, not
+the frontend — and since the frontend proxy adds the token automatically, it
+changes nothing for someone using the app through the browser. It matters only
+when Aegra is reachable independently, which in this topology it is not.
+
+So: a trusted network is fine. A tunnel handing a public URL to the internet is
+not, unless you put authentication in front of it — the reverse proxy is the
+right place, via basic auth or an identity-aware proxy.
+
+### Firewall and network caveats
+
+- **macOS** prompts once, on the first incoming connection, whether `node` may
+  accept them. Until that is allowed the port is unreachable from other
+  machines while looking perfectly healthy locally.
+- **Linux** needs the port opened explicitly: `sudo ufw allow 3000/tcp`.
+- **Guest and public Wi-Fi** commonly isolate clients from each other, which
+  blocks device-to-device traffic no matter how anything is bound. A tunnel is
+  the way round it.
+- **The IP is not stable.** DHCP reassigns it when you rejoin the network, so
+  the link you shared yesterday may point somewhere else today.
+
 ## Systemd
 
 ```ini

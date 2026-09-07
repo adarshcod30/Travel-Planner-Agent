@@ -322,18 +322,36 @@ async def _sweep_loop() -> None:
             log.warning("sweep_failed", error=f"{type(exc).__name__}: {str(exc)[:160]}")
 
 
-@app.on_event("startup")
-async def _start_maintenance() -> None:
-    """Create the trips table and start the sweeper.
+@contextlib.asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Create the trips table and run the sweeper for the life of the server.
 
-    Aegra merges this sub-app's routes into its own application, and whether a
-    sub-app's lifespan runs depends on how it is mounted — so failures here are
-    logged and swallowed rather than taking the server down. `/admin/sweep`
-    remains callable either way.
+    A lifespan context manager, not `on_event`: Aegra merges this sub-app into
+    its own application and refuses outright to merge `on_startup`/`on_shutdown`
+    handlers — it raises `Cannot merge lifespans with on_startup or on_shutdown
+    handlers` and the server never starts.
+
+    Setup failures are logged and swallowed rather than taking Aegra down with
+    them; `/admin/sweep` stays callable by hand either way.
     """
     global _sweeper
-    with contextlib.suppress(Exception):
+    try:
         await ensure_schema()
-    if _sweeper is None:
-        _sweeper = asyncio.create_task(_sweep_loop())
-        log.info("sweeper_started", interval_seconds=SWEEP_INTERVAL_SECONDS)
+    except Exception as exc:
+        log.warning("trips_schema_failed", error=f"{type(exc).__name__}: {str(exc)[:160]}")
+
+    _sweeper = asyncio.create_task(_sweep_loop())
+    log.info("sweeper_started", interval_seconds=SWEEP_INTERVAL_SECONDS)
+    try:
+        yield
+    finally:
+        _sweeper.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _sweeper
+        log.info("sweeper_stopped")
+
+
+# Attached after definition: `lifespan` is declared below the app for
+# readability, and FastAPI reads the attribute at startup rather than at
+# construction.
+app.router.lifespan_context = lifespan

@@ -98,7 +98,7 @@ stay on loopback.
 | Reach | How | Notes |
 |---|---|---|
 | Same network | `./scripts/serve_lan.sh` | Production build bound to `0.0.0.0:3000`; prints the URL |
-| Temporary public | `cloudflared tunnel --url http://localhost:3000` | HTTPS, no router changes, no open inbound port |
+| Temporary public | `./scripts/serve_public.sh` | Cloudflare quick tunnel; requires an access code |
 | Permanent | nginx → `localhost:3000`, TLS via certbot | See the systemd unit below |
 
 Verify the shape rather than assuming it:
@@ -113,17 +113,30 @@ curl -m 3 http://$IP:5432                                         # must refuse
 A `200` from the second command means Aegra is listening on a public interface —
 `aegra serve --host 127.0.0.1`, and let the frontend reach it.
 
-### There is no sign-in
+### Authentication, and which layer it belongs in
 
-`AUTH_TYPE=noop` means anyone who reaches the frontend can run the planner, and
-every run spends from your AWS account. `AUTH_TYPE=token` protects **Aegra**, not
-the frontend — and since the frontend proxy adds the token automatically, it
-changes nothing for someone using the app through the browser. It matters only
-when Aegra is reachable independently, which in this topology it is not.
+`AUTH_TYPE=token` protects **Aegra**, not the frontend — and since the frontend
+proxy adds the token itself, it changes nothing for a browser user. It matters
+only if Aegra is reachable independently, which in this topology it is not.
 
-So: a trusted network is fine. A tunnel handing a public URL to the internet is
-not, unless you put authentication in front of it — the reverse proxy is the
-right place, via basic auth or an identity-aware proxy.
+The layer that needs protecting is the frontend, because that is what a shared
+link reaches. Setting `APP_ACCESS_CODE` turns on a shared-code gate implemented
+as a Next proxy (`frontend/src/proxy.ts`):
+
+- Unset → no gate at all. Local development and trusted-LAN sharing are
+  unchanged.
+- Set → every page redirects to `/enter` and **every `/api/aegra/*` call returns
+  401**. Gating only the pages would leave the path that actually spends money
+  open to anyone reading the network tab.
+
+The code is compared in constant time, the cookie is `HttpOnly` + `SameSite=lax`
+and picks up `Secure` automatically behind the tunnel's HTTPS, and a failed
+attempt is delayed to blunt trivial guessing.
+
+`serve_public.sh` refuses to publish without one, generating a four-word code if
+you do not supply it. That is proportionate for a demo link. It is one shared
+secret, not accounts — a real deployment wants an identity provider in the
+reverse proxy.
 
 ### Firewall and network caveats
 

@@ -243,10 +243,28 @@ Two things to know before sharing:
   keeps serving on whatever address the machine picks up. Only the link changes
   — and not even that, if you shared the `.local` name.
 
-For access beyond the LAN, put a tunnel in front of port 3000 — `cloudflared
-tunnel --url http://localhost:3000` gives a public HTTPS URL without touching
-your router. For anything lasting, deploy properly:
-[AEGRA_DEPLOYMENT.md](docs/AEGRA_DEPLOYMENT.md).
+### Sharing it beyond the LAN
+
+```bash
+./scripts/run_aegra.sh        # terminal 1
+./scripts/serve_public.sh     # terminal 2 — prints a public URL and an access code
+```
+
+This opens a Cloudflare quick tunnel: a public HTTPS URL that works from
+anywhere, with no router configuration and no inbound port. The tunnel dials
+*out* to Cloudflare, so NAT, client-isolated Wi-Fi and corporate firewalls stop
+mattering.
+
+**An access code is mandatory here, not optional.** A public URL with no
+sign-in spends your AWS account for anyone who finds it, and quick-tunnel
+hostnames do get scanned. The script generates a four-word code unless you set
+`APP_ACCESS_CODE` yourself, and gates every route: pages redirect to a prompt,
+and `/api/aegra/*` returns 401 — so the model is never reached without it. The
+gate is off entirely when `APP_ACCESS_CODE` is unset, so local development and
+trusted-LAN sharing are unaffected.
+
+Ctrl-C closes the tunnel and the URL dies with it. For anything lasting, deploy
+properly: [AEGRA_DEPLOYMENT.md](docs/AEGRA_DEPLOYMENT.md).
 
 ## Testing
 

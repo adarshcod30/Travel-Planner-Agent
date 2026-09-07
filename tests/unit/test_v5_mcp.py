@@ -45,10 +45,11 @@ def test_research_sits_between_destination_and_the_fanout(v5):
     assert not [t for s, t in edges if s == "destination" and t != "research"]
 
 
-def test_v5_keeps_the_human_gate(v5):
+def test_v5_keeps_the_review_gate(v5):
+    """v5 inherits v4's section-level gate, not a simpler one — versions add."""
     g = v5.build()
-    assert ("review", "human_gate") in set(g.edges)
-    assert "human_gate" in g.branches
+    assert ("review", "section_gate") in set(g.edges)
+    assert "section_gate" in g.branches
 
 
 # --- the research gate ----------------------------------------------------------

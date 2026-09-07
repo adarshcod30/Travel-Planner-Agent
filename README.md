@@ -24,7 +24,7 @@ switching version at runtime is one field in an API call — not a redeploy.
 | **v1** `v1_linear` | Fixed sequential chain | Baseline: shared state, Bedrock, streaming, checkpointing | 2 |
 | **v2** `v2_parallel` | Fan-out / fan-in DAG | Concurrent branches, reducer-based state merging | 6 |
 | **v3** `v3_orchestrator` | Fan-out + LLM orchestrator | Self-audit loop, targeted re-runs, bounded iteration | 10 |
-| **v4** `v4_hitl` | v3 + `interrupt()` gate | Accept / edit / respond / ignore, resume from checkpoint | 10 |
+| **v4** `v4_hitl` | v3 + a section-level review gate | Comments pinned to sections route without a model; revision history | 10 |
 | **v5** `v5_mcp` | v4 + 4 MCP servers | Real browser automation, per-run MCP session lifecycle | 10 |
 
 ### Measured, not estimated
@@ -100,7 +100,7 @@ flowchart LR
     itinerary --> review
     review -->|approved| finalize
     review -->|needs revision| orchestrator
-    gate{"human gate<br/>(v4, v5)"}
+    gate{"review gate<br/>(v4, v5)"}
     review --> gate
     gate -->|accept| finalize
     gate -->|respond| orchestrator
@@ -126,11 +126,11 @@ sequenceDiagram
     U->>UI: Trip request + version
     UI->>A: POST /threads/{id}/runs/stream
     A->>G: execute
-    G-->>A: interrupt(draft + audit)
+    G-->>A: interrupt(sections + audit + history)
     A-->>UI: SSE — status: interrupted
     Note over A,G: run checkpointed in Postgres
-    UI-->>U: Draft + auditor verdict + 4 actions
-    U->>UI: accept / edit / respond / ignore
+    UI-->>U: Draft by section + verdict + 5 actions
+    U->>UI: accept / comment / respond / edit / ignore
     UI->>A: resume command
     A->>G: continue from checkpoint
     G-->>A: final plan
@@ -149,7 +149,7 @@ runs once across a pause-and-accept cycle.
 | Persistence | PostgreSQL 18 + pgvector | Aegra owns checkpoints, threads, runs, assistants |
 | Tools | MCP — Playwright, Filesystem, Fetch, `travel-mcp` | `travel-mcp` written for this project |
 | Frontend | Next.js 16, React 19, Tailwind 4 | SSE streaming, no CORS |
-| Testing | pytest — 324 tests | Plus a live suite that is opt-in |
+| Testing | pytest — 447 tests | Plus a live suite that is opt-in |
 
 ### Model tiering
 
@@ -269,7 +269,7 @@ properly: [AEGRA_DEPLOYMENT.md](docs/AEGRA_DEPLOYMENT.md).
 ## Testing
 
 ```bash
-uv run pytest -m "not live"     # 324 tests, no credentials, no network
+uv run pytest -m "not live"     # 447 tests, no credentials, no network
 uv run pytest -m live           # real Bedrock calls — costs money
 ```
 

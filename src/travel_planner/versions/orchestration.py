@@ -16,23 +16,21 @@ first pass. Verified empirically before this was written; see the v3 tests.
 iteration counter and forces an empty decision past the configured maximum, so
 the loop terminates even if the reviewer never approves.
 
-**The human gate.** `human_gate_node()` pauses with `interrupt()` and maps the
-four resume types Aegra documents — accept, edit, response, ignore — onto state
-and routing. It accepts both Aegra's list-shaped resume payload and a bare dict.
+**Resume payloads.** `parse_resume()` normalises what a client sends back when
+it answers an `interrupt()`, accepting Aegra's list-shaped payload, a bare dict
+and a bare type string. The gate that consumes it lives in `v4_hitl/gate.py`,
+since v4 is where a paused run stops being a yes/no question — but the payload
+shape is shared, so parsing it is not v4's business alone.
 """
 
 from collections.abc import Callable
 from typing import Any
-
-from langgraph.graph import END
-from langgraph.types import interrupt
 
 from travel_planner.agents.base import BaseAgent
 from travel_planner.agents.orchestrator import OrchestratorAgent
 from travel_planner.core.config import get_settings
 from travel_planner.core.logging import get_logger
 from travel_planner.core.state import OrchestratorDecision, TripState
-from travel_planner.versions.common import render_plan_markdown
 
 log = get_logger(__name__)
 
@@ -133,10 +131,10 @@ def route_after_orchestrator(state: TripState) -> str | list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Human-in-the-loop gate (v4+)
+# Resume payloads (v4+)
 # ---------------------------------------------------------------------------
 
-_RESUME_TYPES = ("accept", "edit", "response", "ignore")
+_RESUME_TYPES = ("accept", "edit", "response", "ignore", "comments")
 
 
 def parse_resume(payload: Any) -> tuple[str, Any]:
@@ -157,59 +155,3 @@ def parse_resume(payload: Any) -> tuple[str, Any]:
     if kind not in _RESUME_TYPES:
         raise ValueError(f"unknown resume type {kind!r}; expected one of {_RESUME_TYPES}")
     return kind, payload.get("args")
-
-
-def human_gate_node(state: TripState) -> dict[str, Any]:
-    """Pause for a human decision on the current draft.
-
-    The interrupt payload carries the rendered draft and the reviewer's audit
-    so a client can show both without a second request. On resume:
-
-    - accept   → finalize the draft as-is
-    - edit     → args["final_plan"] replaces the rendered plan; done
-    - response → args (a string, or {"feedback": ...}) becomes human_feedback
-                 and the orchestrator decides what to re-run
-    - ignore   → abandon; no final plan is produced
-    """
-    review = state.get("review")
-    payload = {
-        "type": "plan_review",
-        "iteration": state.get("iteration") or 0,
-        "draft": render_plan_markdown(state),
-        "review": review.model_dump() if review else None,
-        "config": {
-            "allow_accept": True,
-            "allow_edit": True,
-            "allow_respond": True,
-            "allow_ignore": True,
-        },
-    }
-    kind, args = parse_resume(interrupt(payload))
-    log.info("human_decision", decision=kind)
-
-    update: dict[str, Any] = {"human_decision": kind}
-    if kind == "edit":
-        text = args.get("final_plan") if isinstance(args, dict) else args
-        if not isinstance(text, str) or not text.strip():
-            raise ValueError("edit requires args.final_plan (non-empty string)")
-        update["final_plan"] = text
-    elif kind == "response":
-        text = args.get("feedback") if isinstance(args, dict) else args
-        if not isinstance(text, str) or not text.strip():
-            raise ValueError("response requires feedback text")
-        update["human_feedback"] = text.strip()
-    elif kind == "ignore":
-        update["final_plan"] = None
-    return update
-
-
-def route_after_human_gate(state: TripState) -> str:
-    match state.get("human_decision"):
-        case "accept":
-            return "finalize"
-        case "response":
-            return "orchestrator"
-        case "edit" | "ignore":
-            return END
-        case other:
-            raise ValueError(f"human gate produced no decision: {other!r}")

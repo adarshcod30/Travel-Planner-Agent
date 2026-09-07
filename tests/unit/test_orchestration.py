@@ -1,17 +1,14 @@
 """The orchestration machinery shared by v3, v4 and v5, tested in isolation."""
 
 import pytest
-from langgraph.graph import END
 
 from travel_planner.core.state import AgentError
 from travel_planner.versions import orchestration as orch
 from travel_planner.versions.orchestration import (
     FANOUT,
-    human_gate_node,
     make_orchestrator_node,
     parse_resume,
     rerun_aware,
-    route_after_human_gate,
     route_after_orchestrator,
     route_after_review,
 )
@@ -162,71 +159,3 @@ def test_route_after_orchestrator():
         == "destination"
     )
     assert route_after_orchestrator({"orchestrator_decision": decision("hotel")}) == list(FANOUT)
-
-
-def test_route_after_human_gate():
-    assert route_after_human_gate({"human_decision": "accept"}) == "finalize"
-    assert route_after_human_gate({"human_decision": "response"}) == "orchestrator"
-    assert route_after_human_gate({"human_decision": "edit"}) == END
-    assert route_after_human_gate({"human_decision": "ignore"}) == END
-    with pytest.raises(ValueError):
-        route_after_human_gate({})
-
-
-# --- human gate -----------------------------------------------------------------
-
-
-def _gate_with(monkeypatch, resume_payload):
-    captured = {}
-
-    def fake_interrupt(payload):
-        captured["payload"] = payload
-        return resume_payload
-
-    monkeypatch.setattr(orch, "interrupt", fake_interrupt)
-    return captured
-
-
-def test_gate_payload_carries_draft_and_review(monkeypatch):
-    captured = _gate_with(monkeypatch, [{"type": "accept", "args": None}])
-    state = {"review": NEEDS_REVISION, "iteration": 1, "days": 2}
-    out = human_gate_node(state)
-    p = captured["payload"]
-    assert p["type"] == "plan_review"
-    assert p["iteration"] == 1
-    assert p["draft"].startswith("# Travel Plan")
-    assert p["review"]["verdict"] == "needs_revision"
-    assert set(p["config"]) == {"allow_accept", "allow_edit", "allow_respond", "allow_ignore"}
-    assert out == {"human_decision": "accept"}
-
-
-def test_gate_edit_sets_final_plan(monkeypatch):
-    _gate_with(monkeypatch, {"type": "edit", "args": {"final_plan": "# Mine"}})
-    assert human_gate_node({}) == {"human_decision": "edit", "final_plan": "# Mine"}
-
-
-def test_gate_edit_requires_text(monkeypatch):
-    _gate_with(monkeypatch, {"type": "edit", "args": {}})
-    with pytest.raises(ValueError):
-        human_gate_node({})
-
-
-def test_gate_response_sets_feedback(monkeypatch):
-    _gate_with(monkeypatch, {"type": "response", "args": "  more temples "})
-    assert human_gate_node({}) == {"human_decision": "response", "human_feedback": "more temples"}
-    _gate_with(monkeypatch, {"type": "response", "args": {"feedback": "cheaper"}})
-    assert human_gate_node({})["human_feedback"] == "cheaper"
-
-
-def test_gate_response_requires_text(monkeypatch):
-    _gate_with(monkeypatch, {"type": "response", "args": ""})
-    with pytest.raises(ValueError):
-        human_gate_node({})
-
-
-def test_gate_ignore_clears_plan(monkeypatch):
-    _gate_with(monkeypatch, "ignore")
-    assert human_gate_node({"final_plan": "old"}) == {
-        "human_decision": "ignore",
-        "final_plan": None,
-    }

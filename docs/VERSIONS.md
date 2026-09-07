@@ -78,19 +78,41 @@ approves cannot spin.
 
 ---
 
-## v4 · Human-in-the-loop — `v4_hitl`
+## v4 · Collaborate — `v4_hitl`
 
 ```
-… → review → human_gate ─accept→ finalize
-                        ─edit→ END (the human's text is the plan)
-                        ─respond→ orchestrator → … → review → human_gate
-                        ─ignore→ END
+… → review → section_gate ─accept───→ finalize
+                          ─comments─→ [ the specialists owning the
+                                        commented sections ] → … → section_gate
+                          ─respond──→ orchestrator → … → section_gate
+                          ─edit─────→ END (your text is the plan)
+                          ─ignore───→ END
 ```
 
-The gate sits after **every** review, approved or not: the human sees each draft
-together with the auditor's verdict and decides. `interrupt()` pauses the run and
-Aegra persists the checkpoint, so the answer can come minutes or days later and
-execution resumes from exactly that node.
+v3 already had a revision loop, but only a model could steer it: the reviewer
+wrote prose and the orchestrator guessed which specialists that prose
+implicated. v4 removes the guess. The draft arrives as titled sections, each
+carrying the specialist that produced it, so a comment is already routed by the
+time it is written:
+
+| You comment on | It re-runs |
+|---|---|
+| Overview | `destination` — and everything downstream, since the trip changed |
+| Weather | `weather`, and `packing` because packing consumes it |
+| Budget | `budget`, and `hotel` because hotel consumes it |
+| Attractions · Where to stay · Local customs · Packing list · Itinerary | that one specialist |
+
+No orchestrator call, no misrouting, and an exact target set rather than a
+plausible-sounding one. Free text still routes through the orchestrator —
+`respond` is v3's path, kept because not every objection is about one section.
+
+Every round is recorded as a `Revision` (what was asked, which specialists
+moved, when), so a plan that took four drafts can show them instead of arriving
+looking like a first attempt.
+
+The gate sits after **every** review, approved or not. `interrupt()` pauses the
+run and Aegra persists the checkpoint, so the answer can come minutes or days
+later and execution resumes from exactly that node.
 
 Two constraints carried over from the earlier prototype, where both caused
 silent failures:
@@ -112,7 +134,7 @@ market, lower the hotel tier"*, the orchestrator re-ran exactly `attraction`,
 ## v5 · Live research — `v5_mcp`
 
 ```
-intake → destination → research → [ fan-out ] → … → review → human_gate
+intake → destination → research → [ fan-out ] → … → review → section_gate
 ```
 
 One node is added to v4, and it changes what every other node sees. `research`

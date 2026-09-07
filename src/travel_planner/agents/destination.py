@@ -41,7 +41,7 @@ class DestinationAgent(BaseAgent):
             _line("Season or dates", state.get("season")),
             _line("Travelers", state.get("travelers")),
             _line("Trip length in days", state.get("days")),
-            _line("Reviewer feedback", state.get("human_feedback")),
+            _line("Feedback", state.get("human_feedback")),
             _line("Previously chosen destination", prior_text),
             "",
             "Resolve this into exactly one city and country. If the request names a place, "

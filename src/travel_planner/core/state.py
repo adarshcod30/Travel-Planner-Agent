@@ -38,6 +38,7 @@ a style preference.
 # project's Python floor, so there is nothing to gain by adding it.
 
 import operator
+from datetime import UTC, datetime
 from typing import Annotated, Literal, NotRequired
 
 from langchain_core.messages import BaseMessage
@@ -51,7 +52,7 @@ from typing_extensions import TypedDict
 
 BudgetLevel = Literal["budget", "mid-range", "luxury"]
 ReviewVerdict = Literal["approved", "needs_revision"]
-HumanDecision = Literal["accept", "edit", "response", "ignore"]
+HumanDecision = Literal["accept", "edit", "response", "ignore", "comments"]
 
 #: Specialist agents the orchestrator is allowed to re-run. Constraining the
 #: literal set means an orchestrator hallucinating an agent name fails schema
@@ -229,6 +230,35 @@ class Review(BaseModel):
     suggestions: list[str] = Field(description="Specific fixes for the issues")
 
 
+class SectionComment(BaseModel):
+    """One remark, pinned to one section of the draft.
+
+    Pinning is the whole point. "The budget is off" as free text has to be
+    interpreted by a model before anything can act on it; the same words
+    attached to the budget section already name the specialist to re-run.
+    """
+
+    section: str = Field(description="Section key, as given in the interrupt payload")
+    comment: str = Field(description="What should change about this section")
+
+
+class Revision(BaseModel):
+    """One completed round of human review.
+
+    Kept so a finished plan can account for itself — what was asked for, which
+    specialists that moved, and when. Without this the fourth draft looks
+    exactly like the first and there is no way to see the collaboration that
+    produced it.
+    """
+
+    iteration: int
+    decision: HumanDecision
+    comments: list[SectionComment] = Field(default_factory=list)
+    feedback: str | None = None
+    agents_rerun: list[AgentName] = Field(default_factory=list)
+    at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat(timespec="seconds"))
+
+
 class OrchestratorDecision(BaseModel):
     """Which specialists to re-run, and why."""
 
@@ -316,6 +346,10 @@ class TripState(TypedDict):
     # --- human-in-the-loop (v4+) ---
     human_decision: NotRequired[HumanDecision | None]
     human_feedback: NotRequired[str | None]
+    #: Written only by v4's gate — a single node that the graph is paused at,
+    #: so neither needs a reducer, and both can be cleared by intake.
+    section_comments: NotRequired[list[SectionComment] | None]
+    revisions: NotRequired[list[Revision] | None]
 
     # --- research provenance (v5) ---
     research_notes: NotRequired[list[str] | None]

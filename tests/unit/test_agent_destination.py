@@ -39,7 +39,7 @@ def test_messages_on_empty_state():
     assert isinstance(msgs[0], SystemMessage)
     assert isinstance(msgs[1], HumanMessage)
     assert "Traveler's request: not provided" in msgs[1].content
-    assert "Reviewer feedback: not provided" in msgs[1].content
+    assert "Feedback: not provided" in msgs[1].content
 
 
 def test_messages_on_full_state_include_upstream_values():

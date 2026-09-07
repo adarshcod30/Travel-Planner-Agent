@@ -123,7 +123,7 @@ def test_messages_on_empty_state():
     assert "Weather report: not available" in body
     assert "Budget breakdown: not available" in body
     assert "Local customs: not available" in body
-    assert "Reviewer feedback: none" in body
+    assert "Feedback: none" in body
 
 
 def test_messages_on_full_state(full_state):

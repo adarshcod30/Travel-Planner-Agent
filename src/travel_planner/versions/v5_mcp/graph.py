@@ -1,7 +1,7 @@
 """v5 — v4 plus real research over MCP.
 
     intake -> destination -> research -> [ weather | attraction | budget | customs ]
-              ... -> itinerary -> review -> human_gate -> ...
+              ... -> itinerary -> review -> section_gate -> ...
 
 One node is added to v4, and it changes what every other node sees: `research`
 drives four MCP servers — a real browser via Playwright, the custom travel-mcp
@@ -33,8 +33,12 @@ from travel_planner.core.config import Settings, get_settings
 from travel_planner.core.logging import get_logger
 from travel_planner.core.state import TripState
 from travel_planner.tools.mcp.research import research_node
-from travel_planner.versions.orchestration import human_gate_node, route_after_human_gate
+from travel_planner.versions.orchestration import FANOUT
 from travel_planner.versions.v3_orchestrator.graph import add_specialist_dag
+from travel_planner.versions.v4_hitl.gate import (
+    make_section_gate_node,
+    route_after_section_gate,
+)
 
 log = get_logger(__name__)
 
@@ -106,18 +110,18 @@ def make_research_node(settings: Settings | None = None):
 
 
 def build(*, max_iterations: int | None = None, settings: Settings | None = None) -> StateGraph:
-    """v4's topology with a research node between destination and the fan-out."""
+    """v4's topology — section gate included — with research before the fan-out."""
     g = StateGraph(TripState)
     g.add_node("research", make_research_node(settings))
     add_specialist_dag(g, max_iterations=max_iterations, fanout_source="research")
     g.add_edge("destination", "research")
 
-    g.add_node("human_gate", human_gate_node)
-    g.add_edge("review", "human_gate")
+    g.add_node("section_gate", make_section_gate_node(max_iterations))
+    g.add_edge("review", "section_gate")
     g.add_conditional_edges(
-        "human_gate",
-        route_after_human_gate,
-        {"finalize": "finalize", "orchestrator": "orchestrator", END: END},
+        "section_gate",
+        route_after_section_gate,
+        ["finalize", "orchestrator", "destination", *FANOUT, END],
     )
     return g
 

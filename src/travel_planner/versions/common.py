@@ -7,11 +7,12 @@ ends live here so they are identical across versions, which is what makes a
 cross-version comparison of the *middle* meaningful.
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 from travel_planner.core.logging import get_logger
 from travel_planner.core.money import compact_rupees, per_person_per_day, rupees
-from travel_planner.core.state import TripState
+from travel_planner.core.state import AgentName, TripState
 
 log = get_logger(__name__)
 
@@ -86,6 +87,8 @@ GENERATED_KEYS: tuple[str, ...] = (
     "review",
     "orchestrator_decision",
     "human_decision",
+    "section_comments",
+    "revisions",
     "research_notes",
     "final_plan",
 )
@@ -94,6 +97,31 @@ GENERATED_KEYS: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 # Finalize
 # ---------------------------------------------------------------------------
+
+
+#: What separates one section from the next in the rendered document.
+SECTION_SEPARATOR = "\n\n---\n\n"
+
+
+@dataclass(frozen=True)
+class PlanSection:
+    """One addressable part of a plan.
+
+    `owner` names the specialist whose output produced it, or None where no
+    single agent did — the header, the reviewer's own audit, the research
+    provenance. v4 uses it to turn "this section is wrong" into a re-run
+    without a model in the loop; v1 through v3 render the same sections and
+    simply never look at the field.
+    """
+
+    key: str
+    title: str
+    owner: AgentName | None
+    body: str
+
+
+def _section(key: str, title: str, owner: str | None, body: str) -> PlanSection:
+    return PlanSection(key=key, title=title, owner=owner, body=body)  # type: ignore[arg-type]
 
 
 def _money(x: float, currency: str = "INR") -> str:
@@ -108,14 +136,18 @@ def _money(x: float, currency: str = "INR") -> str:
     return f"{x:,.0f} {currency}"
 
 
-def render_plan_markdown(state: TripState) -> str:
-    """Render whatever the state holds into one Markdown document.
+def plan_sections(state: TripState) -> list[PlanSection]:
+    """The plan as titled, individually addressable sections.
 
     Every section is optional. A version that never ran the packing agent, or
     an agent that failed and was routed around, simply produces a document
     without that section — the renderer never assumes a field exists.
+
+    v4 reviews these one at a time, which is why they carry an `owner`: a
+    comment on the budget has exactly one specialist that can act on it, and
+    knowing that is what lets v4 route without asking a model to guess.
     """
-    parts: list[str] = []
+    parts: list[PlanSection] = []
 
     dest = state.get("destination")
     title = f"{dest.city}, {dest.country}" if dest else "Your trip"
@@ -138,15 +170,20 @@ def render_plan_markdown(state: TripState) -> str:
         header.append(" | ".join(meta))
     if dest and dest.reason:
         header.append(f"\n_{dest.reason}_")
-    parts.append("\n".join(header))
+    parts.append(_section("overview", "Overview", "destination", "\n".join(header)))
 
     if w := state.get("weather"):
         parts.append(
-            "## Weather\n"
-            f"{w.summary}\n\n"
-            f"**Temperature:** {w.temperature_range}\n\n"
-            f"**Wear:** {', '.join(w.clothing)}\n\n"
-            f"**Tips:** {'; '.join(w.tips)}"
+            _section(
+                "weather",
+                "Weather",
+                "weather",
+                "## Weather\n"
+                f"{w.summary}\n\n"
+                f"**Temperature:** {w.temperature_range}\n\n"
+                f"**Wear:** {', '.join(w.clothing)}\n\n"
+                f"**Tips:** {'; '.join(w.tips)}",
+            )
         )
 
     # v1 renders differently: prose days, a cost range, and stated caveats
@@ -155,13 +192,18 @@ def render_plan_markdown(state: TripState) -> str:
         lines = ["## The plan", wp.summary, ""]
         for i, day in enumerate(wp.days, start=1):
             lines += [f"### Day {i}", day, ""]
-        parts.append("\n".join(lines).rstrip())
-        parts.append(f"## Budget\n{wp.budget_note}")
+        parts.append(_section("plan", "The plan", None, "\n".join(lines).rstrip()))
+        parts.append(_section("plan_budget", "Budget", None, f"## Budget\n{wp.budget_note}"))
         if wp.caveats:
             # Surfaced rather than buried: this is what separates an honest
             # single-pass plan from one that merely sounds confident.
             parts.append(
-                "## Worth checking before you book\n" + "\n".join(f"- {c}" for c in wp.caveats)
+                _section(
+                    "caveats",
+                    "Worth checking before you book",
+                    None,
+                    "## Worth checking before you book\n" + "\n".join(f"- {c}" for c in wp.caveats),
+                )
             )
 
     if it := state.get("itinerary"):
@@ -176,13 +218,13 @@ def render_plan_markdown(state: TripState) -> str:
             if d.meals:
                 lines.append(f"- **Meals:** {', '.join(d.meals)}")
             lines.append("")
-        parts.append("\n".join(lines).rstrip())
+        parts.append(_section("itinerary", "Itinerary", "itinerary", "\n".join(lines).rstrip()))
 
     if a := state.get("attractions"):
         lines = ["## Attractions"]
         for x in a.attractions:
             lines.append(f"- **{x.name}** ({x.category}, ~{x.duration_hours:g}h) — {x.description}")
-        parts.append("\n".join(lines))
+        parts.append(_section("attractions", "Attractions", "attraction", "\n".join(lines)))
 
     if h := state.get("hotels"):
         lines = ["## Where to stay"]
@@ -190,7 +232,7 @@ def render_plan_markdown(state: TripState) -> str:
             lines.append(
                 f"- **{x.name}** · {x.tier} · {_money(x.price_per_night)}/night · {x.rating:g}/5 — {x.note}"
             )
-        parts.append("\n".join(lines))
+        parts.append(_section("hotels", "Where to stay", "hotel", "\n".join(lines)))
 
     if b := state.get("budget"):
         c = b.currency
@@ -220,24 +262,29 @@ def render_plan_markdown(state: TripState) -> str:
                     )
             else:
                 budget_md += f" · {_money(b.total / days, c)} per day"
-        parts.append(budget_md)
+        parts.append(_section("budget", "Budget", "budget", budget_md))
 
     if lc := state.get("customs"):
         parts.append(
-            "## Local customs\n"
-            f"**Greetings:** {lc.greetings}\n\n"
-            f"**Tipping:** {lc.tipping}\n\n"
-            f"**Dress:** {lc.dress_code}\n\n"
-            f"**Do:** {'; '.join(lc.dos)}\n\n"
-            f"**Don't:** {'; '.join(lc.donts)}\n\n"
-            f"**Phrases:** {'; '.join(lc.phrases)}"
+            _section(
+                "customs",
+                "Local customs",
+                "customs",
+                "## Local customs\n"
+                f"**Greetings:** {lc.greetings}\n\n"
+                f"**Tipping:** {lc.tipping}\n\n"
+                f"**Dress:** {lc.dress_code}\n\n"
+                f"**Do:** {'; '.join(lc.dos)}\n\n"
+                f"**Don't:** {'; '.join(lc.donts)}\n\n"
+                f"**Phrases:** {'; '.join(lc.phrases)}",
+            )
         )
 
     if p := state.get("packing"):
         lines = ["## Packing list"]
         for g in p.groups:
             lines.append(f"**{g.category}:** {', '.join(g.items)}")
-        parts.append("\n".join(lines))
+        parts.append(_section("packing", "Packing list", "packing", "\n".join(lines)))
 
     if r := state.get("review"):
         lines = [f"## Review — {r.verdict.replace('_', ' ')}"]
@@ -248,14 +295,15 @@ def render_plan_markdown(state: TripState) -> str:
             lines.append("**Issues:** " + "; ".join(r.issues))
         if r.suggestions:
             lines.append("**Suggestions:** " + "; ".join(r.suggestions))
-        parts.append("\n".join(lines))
+        parts.append(_section("review", "Review", None, "\n".join(lines)))
 
     if notes := state.get("research_notes"):
         # Only the provenance line of each note. The full note carries a page
         # excerpt — thousands of characters of raw accessibility tree — which is
         # exactly what a specialist needs in its prompt and exactly what a reader
         # of the finished plan does not.
-        parts.append("## Research sources\n" + "\n".join(f"- {n.split(chr(10))[0]}" for n in notes))
+        body = "## Research sources\n" + "\n".join(f"- {n.split(chr(10))[0]}" for n in notes)
+        parts.append(_section("sources", "Research sources", None, body))
 
     if errs := state.get("errors"):
         lines = ["## Notes"]
@@ -263,9 +311,18 @@ def render_plan_markdown(state: TripState) -> str:
             lines.append(
                 f"- The {e.agent} step could not complete ({e.error_type}); this plan was assembled without it."
             )
-        parts.append("\n".join(lines))
+        parts.append(_section("notes", "Notes", None, "\n".join(lines)))
 
-    return "\n\n---\n\n".join(parts)
+    return parts
+
+
+def render_plan_markdown(state: TripState) -> str:
+    """The plan as one Markdown document — every version's final output.
+
+    Sections are joined with a horizontal rule, which is also what makes the
+    document splittable again: the separator is unambiguous.
+    """
+    return SECTION_SEPARATOR.join(s.body for s in plan_sections(state))
 
 
 def finalize_node(state: TripState) -> dict[str, Any]:

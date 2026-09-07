@@ -67,6 +67,7 @@ VERSIONS: list[dict[str, Any]] = [
         "human_in_the_loop": False,
         "live_research": False,
         "cross_trip_memory": False,
+        "section_review": False,
         "notes": (
             "Runs on the highest model tier deliberately, so whatever the later "
             "versions gain cannot be dismissed as v1 having been handicapped. What "
@@ -86,6 +87,7 @@ VERSIONS: list[dict[str, Any]] = [
         "live_research": False,
         "reference_data": True,
         "cross_trip_memory": False,
+        "section_review": False,
         "notes": (
             "Four specialists run concurrently, and a reference pass runs before "
             "them — so they work from real station codes, the right hotel GST slab "
@@ -116,6 +118,7 @@ VERSIONS: list[dict[str, Any]] = [
         "human_in_the_loop": False,
         "live_research": False,
         "cross_trip_memory": True,
+        "section_review": False,
         "notes": (
             "The first version whose execution path is not knowable in advance, and "
             "the first that improves without being changed: a recall pass reads what "
@@ -126,9 +129,9 @@ VERSIONS: list[dict[str, Any]] = [
     },
     {
         "graph_id": "v4_hitl",
-        "label": "v4 · Human-in-the-loop",
-        "headline": "v3 that pauses for a person",
-        "adds": "An interrupt gate offering accept, edit, respond and ignore",
+        "label": "v4 · Collaborate",
+        "headline": "The plan as a document you mark up section by section",
+        "adds": "Comments pinned to sections, routed without a model, and a revision history",
         "agents": [
             "destination",
             "weather",
@@ -146,9 +149,17 @@ VERSIONS: list[dict[str, Any]] = [
         "human_in_the_loop": True,
         "live_research": False,
         "cross_trip_memory": True,
+        "section_review": True,
         "notes": (
-            "The run is checkpointed at the pause, so the answer can come minutes or "
-            "days later and nothing before the gate is recomputed."
+            "v3's revision loop is steered by a model reading prose. v4's is steered "
+            "by you pointing at a section — and a section has exactly one specialist "
+            "behind it, so 'the hotel line is too high' on the Budget re-runs the "
+            "budget agent with no orchestrator call and nothing to misroute. Free "
+            "text still goes through the orchestrator, for objections that are not "
+            "about any one section. Every round is recorded, so a plan that took "
+            "four drafts can show them. The run is checkpointed at each pause: the "
+            "answer can come minutes or days later and nothing before the gate is "
+            "recomputed."
         ),
     },
     {
@@ -173,6 +184,7 @@ VERSIONS: list[dict[str, Any]] = [
         "human_in_the_loop": True,
         "live_research": True,
         "cross_trip_memory": True,
+        "section_review": True,
         "notes": (
             "The only version registered as a factory graph: Aegra rebuilds it per "
             "request, so MCP sessions belong to the run and a caller can override "

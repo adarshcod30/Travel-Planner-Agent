@@ -75,9 +75,9 @@ class AttractionAgent(BaseAgent):
 
         feedback = state.get("human_feedback")
         if feedback:
-            lines.append(f"Reviewer feedback to apply: {feedback}")
+            lines.append(f"Feedback to apply: {feedback}")
         else:
-            lines.append("Reviewer feedback: none")
+            lines.append("Feedback: none")
 
         lines.append("")
         lines.append("Produce the attraction list now.")

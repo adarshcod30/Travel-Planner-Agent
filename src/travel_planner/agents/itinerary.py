@@ -92,8 +92,8 @@ def _render_day_count(days: int | None) -> str:
 
 def _render_feedback(feedback: str | None) -> str:
     if feedback:
-        return "Reviewer feedback: present above and must be reflected visibly in the plan."
-    return "Reviewer feedback: none"
+        return "Feedback: present above and must be reflected visibly in the plan."
+    return "Feedback: none"
 
 
 class ItineraryAgent(BaseAgent):

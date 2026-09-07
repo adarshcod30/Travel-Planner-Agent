@@ -86,7 +86,7 @@ def test_messages_on_empty_state():
 def test_user_prompt_on_empty_state_names_missing_inputs():
     prompt = AttractionAgent().user_prompt({})
     assert "not available" in prompt
-    assert "Reviewer feedback: none" in prompt
+    assert "Feedback: none" in prompt
     assert "Target count: 6 attractions" in prompt
 
 

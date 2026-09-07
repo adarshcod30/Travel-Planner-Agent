@@ -65,9 +65,23 @@ edges.
 ## Human-in-the-loop
 
 `interrupt()` pauses the run; Aegra persists the checkpoint. The payload carries
-the rendered draft, the auditor's verdict, and which actions are allowed, so a
-client can render the decision without a second request. Resume maps onto the
-four types Aegra documents: accept, edit, response, ignore.
+the draft **as titled sections**, each naming the specialist that produced it,
+plus the auditor's verdict, the revision history so far, and which actions are
+allowed — so a client can render the whole decision without a second request.
+
+Resume maps onto five types: the four Aegra documents (accept, edit, response,
+ignore) plus `comments`, which is v4's. A comment arrives already attached to a
+section, and a section has exactly one specialist behind it, so routing is a
+dictionary lookup rather than a model call:
+
+```
+"the hotel line is too high"  +  section "budget"  ->  re-run `budget`
+```
+
+The comment path then defers to `route_after_orchestrator` — the same routing
+v3 uses — because by that point the decision it reads has already been made,
+just by a person instead of a model. One definition of what a decision means,
+two ways of arriving at one.
 
 Nothing before the gate re-executes on resume — verified.
 

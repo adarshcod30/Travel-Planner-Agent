@@ -104,3 +104,36 @@ class FakeModel:
 
         monkeypatch.setattr(base, "invoke_structured", self)
         return self
+
+
+def full_state(**overrides):
+    """A state dict with every specialist's output present.
+
+    Node-level tests need a plan to reason about without running a graph to
+    produce one; this is that plan, built from the same fixtures the scripted
+    model returns.
+    """
+    state = {
+        "request": "temples and food",
+        "origin": "Delhi",
+        "days": 2,
+        "travelers": 2,
+        "budget_level": "mid-range",
+        "interests": ["history"],
+        **{
+            key: _FIXED[cls]
+            for cls, key in (
+                (DestinationChoice, "destination"),
+                (WeatherReport, "weather"),
+                (AttractionList, "attractions"),
+                (BudgetBreakdown, "budget"),
+                (HotelList, "hotels"),
+                (LocalCustoms, "customs"),
+                (PackingList, "packing"),
+                (Itinerary, "itinerary"),
+            )
+        },
+        "review": APPROVED,
+    }
+    state.update(overrides)
+    return state

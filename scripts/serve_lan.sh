@@ -26,6 +26,12 @@ lan_ip() {
 IP=$(lan_ip)
 [[ -z "$IP" ]] && { echo "Could not determine a LAN address. Are you on a network?" >&2; exit 1; }
 
+# The machine's mDNS name, if this platform publishes one. Prefer it over the
+# IP when sharing: Bonjour re-points it automatically, so it keeps working
+# after you move networks and DHCP hands you a different address.
+MDNS=$(scutil --get LocalHostName 2>/dev/null || hostname -s 2>/dev/null || true)
+[[ -n "$MDNS" && "$MDNS" != *.local ]] && MDNS="${MDNS}.local"
+
 if ! curl -sf -m 3 http://127.0.0.1:2026/health >/dev/null; then
   cat >&2 <<MSG
 Aegra is not running on 127.0.0.1:2026.
@@ -39,12 +45,25 @@ fi
 echo "== Building the frontend (production)"
 (cd frontend && npm run build >/dev/null)
 
+echo
+if [[ -n "$MDNS" ]]; then
+  echo "  Share this:   http://${MDNS}:${PORT}"
+  echo "                survives a network change — Bonjour re-points the name"
+  echo "                when DHCP gives you a new address"
+  echo
+  echo "  Or by IP:     http://${IP}:${PORT}"
+  echo "                only valid on this network; the link dies when you move"
+else
+  echo "  Share this:   http://${IP}:${PORT}"
+  echo "                only valid on this network; the link dies when you move"
+fi
 cat <<MSG
-
-  Share this:   http://${IP}:${PORT}
 
   Exposed:      the frontend only, on port ${PORT}
   Not exposed:  Aegra (127.0.0.1:2026) and PostgreSQL (127.0.0.1:5432)
+
+  Bound to 0.0.0.0, so moving networks does not require a restart — the server
+  keeps serving on whatever address the machine picks up. Only the link changes.
 
   Anyone who opens that link can run the planner, and every run spends from
   YOUR AWS account. There is no sign-in. Share it on a network you trust,

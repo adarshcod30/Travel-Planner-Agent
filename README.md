@@ -213,7 +213,18 @@ curl http://localhost:2026/health/deep
 ./scripts/serve_lan.sh        # terminal 2 — prints the shareable URL
 ```
 
-Anyone on the same network opens `http://<your-ip>:3000`.
+The script prints two addresses. Prefer the `.local` one:
+
+```
+http://Adarshs-MacBook-Air.local:3000   ← survives moving to another network
+http://172.22.197.13:3000               ← only valid on the current network
+```
+
+macOS publishes that name over Bonjour, so it re-points itself when DHCP hands
+you a different address — the link you shared keeps working after you move.
+Other Macs and most Linux resolve it out of the box; Windows 10+ generally does,
+older Windows needs Bonjour installed. If it fails for someone, fall back to the
+IP.
 
 **Only the frontend is exposed.** Aegra and PostgreSQL stay bound to loopback,
 because the browser never talks to Aegra — it calls `/api/aegra/...` on the
@@ -228,6 +239,9 @@ Two things to know before sharing:
 - **macOS will ask once** whether `node` may accept incoming connections. Allow
   it, or the port stays unreachable from other machines. Guest Wi-Fi that
   isolates clients blocks this regardless of any setting.
+- **Moving networks needs no restart.** The server is bound to `0.0.0.0`, so it
+  keeps serving on whatever address the machine picks up. Only the link changes
+  — and not even that, if you shared the `.local` name.
 
 For access beyond the LAN, put a tunnel in front of port 3000 — `cloudflared
 tunnel --url http://localhost:3000` gives a public HTTPS URL without touching

@@ -134,8 +134,21 @@ right place, via basic auth or an identity-aware proxy.
 - **Guest and public Wi-Fi** commonly isolate clients from each other, which
   blocks device-to-device traffic no matter how anything is bound. A tunnel is
   the way round it.
-- **The IP is not stable.** DHCP reassigns it when you rejoin the network, so
-  the link you shared yesterday may point somewhere else today.
+- **The IP is not stable.** DHCP reassigns it when you rejoin a network, so a
+  link shared yesterday may point somewhere else today. Share the machine's
+  mDNS name instead — `scutil --get LocalHostName` plus `.local` on macOS,
+  published by Bonjour and re-pointed automatically when the address changes.
+  Confirm what the network actually sees, rather than what `/etc/hosts` says:
+
+  ```bash
+  dig +short -p 5353 @224.0.0.251 "$(scutil --get LocalHostName).local" A
+  ```
+
+  That must return the LAN address. A loopback answer means you queried the
+  resolver rather than mDNS.
+- **Moving networks does not require a restart.** Bound to `0.0.0.0`, the server
+  accepts on interfaces that appear later, so it follows the machine rather than
+  the address.
 
 ## Systemd
 

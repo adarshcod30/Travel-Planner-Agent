@@ -60,6 +60,7 @@ export function VersionSwitcher({
             <Capability on={active.orchestrated} label="orchestrated" />
             <Capability on={active.human_in_the_loop} label="human gate" />
             <Capability on={active.live_research} label="live research" />
+            <Capability on={active.cross_trip_memory} label="memory" />
           </div>
           <p className="mt-2.5 text-xs leading-relaxed text-muted">{active.notes}</p>
         </div>

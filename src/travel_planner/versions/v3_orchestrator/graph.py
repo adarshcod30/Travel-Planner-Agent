@@ -29,6 +29,7 @@ from travel_planner.agents.review import ReviewAgent
 from travel_planner.agents.weather import WeatherAgent
 from travel_planner.core.state import TripState
 from travel_planner.versions.common import finalize_node, intake_node
+from travel_planner.versions.memory_nodes import recall_node, remember_node
 from travel_planner.versions.orchestration import (
     FANOUT,
     make_orchestrator_node,
@@ -62,6 +63,12 @@ def add_specialist_dag(
     g.add_node("customs", rerun_aware(CustomsAgent()))
     g.add_node("packing", rerun_aware(PackingAgent()))
     g.add_node("hotel", rerun_aware(HotelAgent()))
+    # v5 supplies its own richer pass (browser + memory) as `research`, so the
+    # recall node is only added where it is actually reached — a node with no
+    # incoming edge is dead weight in the graph and confusing in a topology view.
+    if fanout_source == "destination":
+        g.add_node("recall", recall_node)
+    g.add_node("remember", remember_node)
     g.add_node("itinerary", ItineraryAgent())  # always re-assembles
     g.add_node("review", ReviewAgent())  # always re-audits
     g.add_node("orchestrator", make_orchestrator_node(max_iterations))
@@ -69,6 +76,12 @@ def add_specialist_dag(
 
     g.add_edge(START, "intake")
     g.add_edge("intake", "destination")
+    # Recall sits between the destination and the specialists: it needs the
+    # destination resolved, and everything downstream needs what it found. v5
+    # overrides `fanout_source` to put its browser research here instead.
+    if fanout_source == "destination":
+        g.add_edge("destination", "recall")
+        fanout_source = "recall"
     for name in FANOUT:
         g.add_edge(fanout_source, name)
     g.add_edge("weather", "packing")
@@ -80,7 +93,10 @@ def add_specialist_dag(
         route_after_orchestrator,
         ["finalize", "destination", *FANOUT],
     )
-    g.add_edge("finalize", END)
+    # Remember runs after the plan exists, so it records a real trip rather than
+    # an abandoned one.
+    g.add_edge("finalize", "remember")
+    g.add_edge("remember", END)
 
 
 def build(*, max_iterations: int | None = None) -> StateGraph:

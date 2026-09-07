@@ -1,7 +1,7 @@
 """v3 — the orchestrated revision loop, with every model call scripted."""
 
 import pytest
-from langgraph.graph import START
+from langgraph.graph import END, START
 
 from .fakes import APPROVED, NEEDS_REVISION, FakeModel, decision
 
@@ -15,15 +15,21 @@ def v3():
     return mod
 
 
-def _run(v3, fake, max_iterations=3):
-    return v3.build(max_iterations=max_iterations).compile().invoke({"request": "Kyoto", "days": 2})
+async def _run(v3, fake, max_iterations=3):
+    return (
+        await v3.build(max_iterations=max_iterations)
+        .compile()
+        .ainvoke({"request": "Kyoto", "days": 2})
+    )
 
 
-def test_topology(v3):
+async def test_topology(v3):
     g = v3.build()
     assert set(g.nodes) == {
         "intake",
         *SPECIALISTS,
+        "recall",
+        "remember",
         "itinerary",
         "review",
         "orchestrator",
@@ -39,9 +45,19 @@ def test_topology(v3):
     assert "review" in g.branches and "orchestrator" in g.branches
 
 
-def test_approved_first_pass_skips_orchestrator(v3, monkeypatch):
+async def test_memory_brackets_the_planning_layers(v3):
+    """Recall runs before the fan-out; remember runs after the plan exists."""
+    edges = set(v3.build().edges)
+    assert ("destination", "recall") in edges
+    assert not any(src == "destination" and dst != "recall" for src, dst in edges)
+    for name in ("weather", "attraction", "budget", "customs"):
+        assert ("recall", name) in edges
+    assert ("finalize", "remember") in edges and ("remember", END) in edges
+
+
+async def test_approved_first_pass_skips_orchestrator(v3, monkeypatch):
     fake = FakeModel(reviews=[APPROVED]).install(monkeypatch)
-    out = _run(v3, fake)
+    out = await _run(v3, fake)
     for name in (*SPECIALISTS, "itinerary", "review"):
         assert fake.count(name) == 1, name
     assert fake.count("orchestrator") == 0
@@ -50,12 +66,12 @@ def test_approved_first_pass_skips_orchestrator(v3, monkeypatch):
     assert "## Itinerary" in out["final_plan"]
 
 
-def test_targeted_revision_reruns_only_named_agents(v3, monkeypatch):
+async def test_targeted_revision_reruns_only_named_agents(v3, monkeypatch):
     """Reviewer rejects once; orchestrator names hotel; only hotel re-runs."""
     fake = FakeModel(reviews=[NEEDS_REVISION, APPROVED], decisions=[decision("hotel")]).install(
         monkeypatch
     )
-    out = _run(v3, fake)
+    out = await _run(v3, fake)
     assert fake.count("orchestrator") == 1
     assert out["iteration"] == 1
     assert fake.count("hotel") == 2
@@ -68,32 +84,32 @@ def test_targeted_revision_reruns_only_named_agents(v3, monkeypatch):
     assert out["review"].verdict == "approved"
 
 
-def test_dependency_rerun_cascades(v3, monkeypatch):
+async def test_dependency_rerun_cascades(v3, monkeypatch):
     """Naming weather must also re-run packing, which consumes it."""
     fake = FakeModel(reviews=[NEEDS_REVISION, APPROVED], decisions=[decision("weather")]).install(
         monkeypatch
     )
-    _run(v3, fake)
+    await _run(v3, fake)
     assert fake.count("weather") == 2
     assert fake.count("packing") == 2
     assert fake.count("hotel") == 1 and fake.count("budget") == 1
 
 
-def test_new_destination_reruns_everything(v3, monkeypatch):
+async def test_new_destination_reruns_everything(v3, monkeypatch):
     fake = FakeModel(
         reviews=[NEEDS_REVISION, APPROVED], decisions=[decision("destination")]
     ).install(monkeypatch)
-    _run(v3, fake)
+    await _run(v3, fake)
     for name in (*SPECIALISTS, "itinerary", "review"):
         assert fake.count(name) == 2, name
 
 
-def test_revision_ceiling_terminates_the_loop(v3, monkeypatch):
+async def test_revision_ceiling_terminates_the_loop(v3, monkeypatch):
     """Reviewer never approves; the loop must still end at the configured limit."""
     fake = FakeModel(reviews=[NEEDS_REVISION] * 10, decisions=[decision("hotel")] * 10).install(
         monkeypatch
     )
-    out = _run(v3, fake, max_iterations=2)
+    out = await _run(v3, fake, max_iterations=2)
     # orchestrator called 3 times: two real decisions, then the ceiling short-circuits
     assert out["iteration"] == 3
     assert out["orchestrator_decision"].agents_to_rerun == []
@@ -103,9 +119,9 @@ def test_revision_ceiling_terminates_the_loop(v3, monkeypatch):
     assert out["final_plan"]
 
 
-def test_empty_decision_finalizes(v3, monkeypatch):
+async def test_empty_decision_finalizes(v3, monkeypatch):
     fake = FakeModel(reviews=[NEEDS_REVISION], decisions=[decision()]).install(monkeypatch)
-    out = _run(v3, fake)
+    out = await _run(v3, fake)
     assert out["iteration"] == 1
     assert fake.count("review") == 1
     assert out["final_plan"]

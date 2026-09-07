@@ -23,6 +23,7 @@ export interface VersionMeta {
   orchestrated: boolean;
   human_in_the_loop: boolean;
   live_research: boolean;
+  cross_trip_memory: boolean;
   notes: string;
 }
 

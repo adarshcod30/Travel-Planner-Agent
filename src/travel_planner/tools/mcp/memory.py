@@ -37,11 +37,17 @@ async def _call(toolset: McpToolset, tool: str, args: dict[str, Any]) -> str | N
 async def recall(toolset: McpToolset, owner: str = DEFAULT_OWNER) -> list[str]:
     """Everything known about this traveller, as prompt-ready lines.
 
+    Reads the whole graph rather than searching it. `search_nodes(query=owner)`
+    returns only nodes matching the traveller's name, which silently excludes
+    every destination they have visited — so "somewhere I have not been", the
+    single most useful thing memory enables, could never work. The graph is one
+    traveller's trips; reading all of it is both cheap and correct.
+
     Returns an empty list when there is nothing yet or the server is
     unreachable, so a first-time traveller and a broken memory server produce
     the same graceful outcome.
     """
-    raw = await _call(toolset, "search_nodes", {"query": owner})
+    raw = await _call(toolset, "read_graph", {})
     if not raw:
         return []
     try:
@@ -51,17 +57,31 @@ async def recall(toolset: McpToolset, owner: str = DEFAULT_OWNER) -> list[str]:
     except Exception:
         return []
 
-    lines: list[str] = []
+    facts: list[str] = []
+    visited: list[str] = []
+
     for entity in graph.get("entities", []) or []:
         name, kind = entity.get("name", ""), entity.get("entityType", "")
-        obs = entity.get("observations") or []
+        obs = [str(o) for o in (entity.get("observations") or [])]
         if name == owner:
-            lines.extend(str(o) for o in obs)
-        elif obs:
-            lines.append(f"{kind or 'note'} — {name}: {'; '.join(str(o) for o in obs)}")
-        else:
-            lines.append(f"{kind or 'note'} — {name}")
-    return lines
+            facts.extend(obs)
+        elif kind == "destination":
+            visited.append(name)
+
+    # Relations are the authority on what was actually visited; the entity list
+    # may also hold places merely considered.
+    for rel in graph.get("relations", []) or []:
+        if (
+            rel.get("from") == owner
+            and rel.get("relationType") == "has visited"
+            and (to := rel.get("to"))
+            and to not in visited
+        ):
+            visited.append(to)
+
+    if visited:
+        facts.append("has already travelled to " + ", ".join(sorted(visited)))
+    return facts
 
 
 async def remember_trip(

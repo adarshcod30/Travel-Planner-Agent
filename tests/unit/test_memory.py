@@ -6,8 +6,6 @@ enhancement, so an unreachable server must produce a less personal plan, never a
 failed one.
 """
 
-from types import SimpleNamespace
-
 from travel_planner.tools.mcp.client import McpToolset
 from travel_planner.tools.mcp.memory import recall, remember_trip
 
@@ -32,19 +30,28 @@ class _Tool:
 GRAPH = """{"entities":[
   {"name":"local-dev","entityType":"traveller","observations":["travels from Delhi","prefers vegetarian"]},
   {"name":"Jaipur","entityType":"destination","observations":["in India"]}
-],"relations":[]}"""
+],"relations":[
+  {"from":"local-dev","to":"Jaipur","relationType":"has visited"}
+]}"""
 
 
 async def test_recall_returns_prompt_ready_lines():
-    ts = _toolset(search_nodes=_Tool(GRAPH))
+    ts = _toolset(read_graph=_Tool(GRAPH))
     lines = await recall(ts)
     assert "travels from Delhi" in lines
     assert "prefers vegetarian" in lines
-    assert any("Jaipur" in x for x in lines)
+    assert any("has already travelled to" in x and "Jaipur" in x for x in lines), lines
+
+
+async def test_recall_surfaces_where_they_have_been():
+    """The single most useful thing memory enables — "somewhere I have not been"
+    — needs visited destinations, which a name-scoped search silently excludes."""
+    ts = _toolset(read_graph=_Tool(GRAPH))
+    assert any("Jaipur" in line for line in await recall(ts))
 
 
 async def test_recall_is_empty_for_a_first_time_traveller():
-    assert await recall(_toolset(search_nodes=_Tool('{"entities":[],"relations":[]}'))) == []
+    assert await recall(_toolset(read_graph=_Tool('{"entities":[],"relations":[]}'))) == []
 
 
 async def test_recall_degrades_when_the_server_is_missing():
@@ -53,11 +60,11 @@ async def test_recall_degrades_when_the_server_is_missing():
 
 
 async def test_recall_degrades_when_the_server_fails():
-    assert await recall(_toolset(search_nodes=_Tool(boom=True))) == []
+    assert await recall(_toolset(read_graph=_Tool(boom=True))) == []
 
 
 async def test_recall_survives_unparseable_output():
-    assert await recall(_toolset(search_nodes=_Tool("not json at all"))) == []
+    assert await recall(_toolset(read_graph=_Tool("not json at all"))) == []
 
 
 async def test_remember_writes_traveller_facts_and_a_visit():
@@ -104,4 +111,3 @@ async def test_remember_degrades_when_the_server_is_missing():
         interests=[],
         budget_level="budget",
     )
-    assert SimpleNamespace  # imported for the reader

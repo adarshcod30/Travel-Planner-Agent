@@ -66,6 +66,7 @@ VERSIONS: list[dict[str, Any]] = [
         "orchestrated": False,
         "human_in_the_loop": False,
         "live_research": False,
+        "cross_trip_memory": False,
         "notes": (
             "Runs on the highest model tier deliberately, so whatever the later "
             "versions gain cannot be dismissed as v1 having been handicapped. What "
@@ -84,6 +85,7 @@ VERSIONS: list[dict[str, Any]] = [
         "human_in_the_loop": False,
         "live_research": False,
         "reference_data": True,
+        "cross_trip_memory": False,
         "notes": (
             "Four specialists run concurrently, and a reference pass runs before "
             "them — so they work from real station codes, the right hotel GST slab "
@@ -95,8 +97,8 @@ VERSIONS: list[dict[str, Any]] = [
     {
         "graph_id": "v3_orchestrator",
         "label": "v3 · Orchestrated",
-        "headline": "Seven specialists, a reviewer, and a revision loop",
-        "adds": "A reviewer audits the draft; an orchestrator decides what to re-run",
+        "headline": "Seven specialists, a reviewer, and memory of your last trip",
+        "adds": "A reviewer and an orchestrator, over facts carried across trips",
         "agents": [
             "destination",
             "weather",
@@ -113,7 +115,14 @@ VERSIONS: list[dict[str, Any]] = [
         "orchestrated": True,
         "human_in_the_loop": False,
         "live_research": False,
-        "notes": "The first version whose execution path is not knowable in advance.",
+        "cross_trip_memory": True,
+        "notes": (
+            "The first version whose execution path is not knowable in advance, and "
+            "the first that improves without being changed: a recall pass reads what "
+            "earlier trips revealed — where you travel from, how you book, where you "
+            "have already been — and a remember pass writes this trip back. Ask for "
+            "somewhere new on the second run and it knows what to rule out."
+        ),
     },
     {
         "graph_id": "v4_hitl",
@@ -136,6 +145,7 @@ VERSIONS: list[dict[str, Any]] = [
         "orchestrated": True,
         "human_in_the_loop": True,
         "live_research": False,
+        "cross_trip_memory": True,
         "notes": (
             "The run is checkpointed at the pause, so the answer can come minutes or "
             "days later and nothing before the gate is recomputed."
@@ -162,6 +172,7 @@ VERSIONS: list[dict[str, Any]] = [
         "orchestrated": True,
         "human_in_the_loop": True,
         "live_research": True,
+        "cross_trip_memory": True,
         "notes": (
             "The only version registered as a factory graph: Aegra rebuilds it per "
             "request, so MCP sessions belong to the run and a caller can override "

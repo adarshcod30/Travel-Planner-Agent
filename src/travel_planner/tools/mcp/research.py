@@ -114,18 +114,43 @@ async def gather_reference(state: TripState, settings: Settings | None = None) -
     """
     settings = settings or get_settings()
     scoped = Settings(**{**settings.model_dump(), "mcp_enabled_servers": REFERENCE_SERVERS})
-    return await _lookups(state, scoped, browser=False, thread_id=None)
+    return await _lookups(state, scoped, browser=False, memory=False, thread_id=None)
+
+
+#: Servers v3 and v4 may use: reference data plus memory, still no browser.
+REMEMBERED_SERVERS = "fetch,travel,time,memory"
+
+
+async def gather_remembered(state: TripState, settings: Settings | None = None) -> list[str]:
+    """v3's research: reference data, plus what is already known about the traveller.
+
+    The addition over v2 is memory. A second trip should not have to be told the
+    same things as the first — home city, budget level, dietary needs, where
+    they have already been — and those facts change the plan rather than
+    decorating it: a destination agent that knows you have been to Jaipur twice
+    can stop suggesting it.
+    """
+    settings = settings or get_settings()
+    scoped = Settings(**{**settings.model_dump(), "mcp_enabled_servers": REMEMBERED_SERVERS})
+    return await _lookups(state, scoped, browser=False, memory=True, thread_id=None)
 
 
 async def gather_research(
     state: TripState, settings: Settings | None = None, thread_id: str | None = None
 ) -> list[str]:
     """v5's research: everything, including a real browser and cross-trip memory."""
-    return await _lookups(state, settings or get_settings(), browser=True, thread_id=thread_id)
+    return await _lookups(
+        state, settings or get_settings(), browser=True, memory=True, thread_id=thread_id
+    )
 
 
 async def _lookups(
-    state: TripState, settings: Settings, *, browser: bool, thread_id: str | None
+    state: TripState,
+    settings: Settings,
+    *,
+    browser: bool,
+    memory: bool,
+    thread_id: str | None,
 ) -> list[str]:
     """The shared lookup pass. `browser` decides whether v5's extras run.
 
@@ -207,7 +232,7 @@ async def _lookups(
         _call(toolset, ("check_festivals",), {"month": season, "region": dest.city}, timeout),
         _call(toolset, ("get_current_time",), {"timezone": "Asia/Kolkata"}, timeout),
         _live_inr_rate(toolset, timeout),
-        recall(toolset) if browser else _noop_list(),
+        recall(toolset) if memory else _noop_list(),
         return_exceptions=True,
     )
     web, hotels = browse_result if isinstance(browse_result, tuple) else (None, None)

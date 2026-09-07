@@ -77,7 +77,7 @@ class Settings(BaseSettings):
 
     # --- MCP (v5) ----------------------------------------------------------------
     mcp_mode: McpMode = "stdio"
-    mcp_enabled_servers: str = "playwright,filesystem,fetch,travel"
+    mcp_enabled_servers: str = "playwright,fetch,travel,tavily"
     mcp_tool_timeout_seconds: float = 45.0
 
     # A live browser costs roughly 1.3 GB across its process tree, and Aegra's

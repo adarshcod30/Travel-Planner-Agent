@@ -31,8 +31,19 @@ def _settings(**overrides) -> Settings:
 # --- connections ----------------------------------------------------------------
 
 
-def test_default_servers_are_configured():
-    conns = build_connections(_settings())
+def test_enabled_is_not_the_same_as_connectable():
+    """`enabled_mcp_servers` is intent; `build_connections` is what can be reached.
+
+    Tavily is enabled by default but needs a key, so a checkout with no .env
+    gets three servers rather than a fourth pointed at a URL ending in '='.
+    """
+    s = _settings(tavily_api_key="")
+    assert s.enabled_mcp_servers == ("playwright", "fetch", "travel", "tavily")
+    assert set(build_connections(s)) == {"playwright", "fetch", "travel"}
+
+
+def test_tavily_appears_once_a_key_is_present():
+    conns = build_connections(_settings(tavily_api_key="tvly-test"))
     assert set(conns) == {"playwright", "fetch", "travel", "tavily"}
 
 

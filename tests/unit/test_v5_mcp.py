@@ -21,7 +21,7 @@ def no_research(monkeypatch, v5):
     """Replace the MCP research pass with a scripted note; record settings seen."""
     calls = []
 
-    async def fake_research(state, settings=None):
+    async def fake_research(state, settings=None, config=None):
         calls.append((state.get("destination"), settings))
         return {"research_notes": [f"scripted research for {state['destination'].city}"]}
 
@@ -110,7 +110,7 @@ async def test_per_run_settings_reach_the_research_node(v5, monkeypatch):
     """The factory resolving settings is worthless if the node ignores them."""
     seen = {}
 
-    async def spy(state, settings=None):
+    async def spy(state, settings=None, config=None):
         seen["servers"] = settings.enabled_mcp_servers if settings else None
         return {"research_notes": ["x"]}
 
@@ -175,7 +175,7 @@ async def test_research_node_swallows_mcp_failures(v5, monkeypatch):
     """The real research_node must degrade, not raise — a dead browser is not fatal."""
     from travel_planner.tools.mcp import research as research_mod
 
-    async def boom(state, settings=None):
+    async def boom(state, settings=None, thread_id=None):
         raise RuntimeError("playwright unavailable")
 
     monkeypatch.setattr(research_mod, "gather_research", boom)

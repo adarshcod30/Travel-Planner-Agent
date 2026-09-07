@@ -256,11 +256,19 @@ async def test_destination_chain_leads_with_wikivoyage():
     assert "wikivoyage.org/wiki/Kyoto" in r["url_used"]
 
 
-async def test_hotel_chain_leads_with_booking():
+async def test_hotel_chain_leads_with_an_indian_aggregator():
+    """Trips start in India, so the chain leads with sites that quote rupees."""
     ts = _toolset(["ok"], [REAL_PAGE])
-    r = await research_hotels(ts, "Kyoto, Japan", 3, "mid-range", 2)
-    assert r["source_used"] == "booking.com"
-    assert "booking.com" in r["url_used"]
+    r = await research_hotels(ts, "Jaipur, India", 3, "mid-range", 2)
+    assert r["source_used"] == "makemytrip"
+    assert "makemytrip.com" in r["url_used"]
+
+
+async def test_hotel_chain_falls_through_to_a_search_engine():
+    ts = _toolset(["ok"] * 3, [_page("captcha"), _page("unusual traffic"), REAL_PAGE])
+    r = await research_hotels(ts, "Jaipur, India", 3, "mid-range", 2)
+    assert r["source_used"] == "bing"
+    assert [a["target"] for a in r["attempts"]] == ["makemytrip", "goibibo"]
 
 
 def test_snapshot_body_strips_the_envelope():

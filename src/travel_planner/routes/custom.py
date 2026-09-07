@@ -29,6 +29,7 @@ from travel_planner.core.storage import (
     sweep_abandoned,
 )
 from travel_planner.tools.mcp.client import browser_capacity
+from travel_planner.tools.mcp.frames import FRAME_ROOT, frame_path
 
 log = get_logger(__name__)
 
@@ -230,6 +231,37 @@ async def deep_health() -> dict[str, Any]:
         # queueing: Aegra's own /health knows about runs, not about Chrome.
         "browsers": browser_capacity(settings),
         "max_orchestrator_iterations": settings.max_orchestrator_iterations,
+    }
+
+
+@app.get("/runs/{thread_id}/frames/{name}", tags=["live"])
+async def frame(thread_id: str, name: str):
+    """Serve one browser screenshot.
+
+    Frames are referenced by path in the event stream rather than inlined,
+    because a base64 JPEG is 100-300 KB and at one per browser action would
+    swamp the SSE connection. Served here they are cached by the browser and
+    fetched only when actually displayed.
+    """
+    from fastapi.responses import FileResponse
+
+    path = frame_path(thread_id, name)
+    if path is None:
+        raise HTTPException(404, "no such frame")
+    return FileResponse(
+        path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"}
+    )
+
+
+@app.get("/runs/{thread_id}/frames", tags=["live"])
+async def frames(thread_id: str) -> dict[str, Any]:
+    """Every frame captured for a run, in order — the replayable filmstrip."""
+    d = FRAME_ROOT / thread_id
+    names = sorted(p.name for p in d.glob("*.jpg")) if d.is_dir() else []
+    return {
+        "thread_id": thread_id,
+        "count": len(names),
+        "frames": [f"/runs/{thread_id}/frames/{n}" for n in names],
     }
 
 

@@ -17,6 +17,7 @@ from typing import Any, ClassVar
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
+from travel_planner.core import events
 from travel_planner.core.bedrock import invoke_structured
 from travel_planner.core.config import ModelTier
 from travel_planner.core.exceptions import TravelPlannerError
@@ -84,15 +85,31 @@ class BaseAgent(ABC):
     # ---- execution ----------------------------------------------------------------
 
     def run(self, state: TripState) -> dict[str, Any]:
-        """Execute and return a state update. Raises on failure."""
+        """Execute and return a state update. Raises on failure.
+
+        Emits before and after, so a client sees an agent light up the moment it
+        starts rather than only when the whole superstep returns. LangGraph runs
+        sync nodes in a threadpool and still propagates the stream writer, so
+        these reach the client from here — verified.
+        """
+        events.agent_started(self.name, self.tier)
         result = invoke_structured(
             self.schema,
             self.messages(state),
             tier=self.tier,
             agent=self.name,
         )
+        run = result.run
+        events.agent_finished(
+            self.name,
+            run.tier,
+            run.duration_ms,
+            run.input_tokens + run.output_tokens,
+            run.repairs,
+            run.escalated,
+        )
         update = self.to_update(result.value)
-        update["agent_runs"] = [result.run]
+        update["agent_runs"] = [run]
         return update
 
     def safe_run(self, state: TripState) -> dict[str, Any]:
@@ -109,6 +126,7 @@ class BaseAgent(ABC):
             log.error(
                 "agent_failed", agent=self.name, error=type(exc).__name__, detail=str(exc)[:200]
             )
+            events.agent_failed(self.name, type(exc).__name__)
             return {
                 "errors": [
                     AgentError(

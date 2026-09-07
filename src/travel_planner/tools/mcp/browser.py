@@ -29,10 +29,12 @@ not, so a substitution is never silent.
 import asyncio
 from collections.abc import Sequence
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
+from travel_planner.core import events
 from travel_planner.core.logging import get_logger
 from travel_planner.tools.mcp.client import McpToolset
+from travel_planner.tools.mcp.frames import capture
 
 log = get_logger(__name__)
 
@@ -116,7 +118,9 @@ def looks_empty(text: str) -> bool:
     return len(snapshot_body(text)) < MIN_USEFUL_SNAPSHOT_CHARS
 
 
-async def _navigate_and_snapshot(toolset: McpToolset, url: str, timeout: float) -> str:
+async def _navigate_and_snapshot(
+    toolset: McpToolset, url: str, timeout: float, thread_id: str | None = None
+) -> str:
     """Navigate and read the page — the two calls that must share one session.
 
     With a session per tool call the navigate happens in one browser and the
@@ -130,7 +134,15 @@ async def _navigate_and_snapshot(toolset: McpToolset, url: str, timeout: float) 
         raise RuntimeError("playwright MCP did not expose browser_navigate/browser_snapshot")
 
     log.info("browser_navigate", url=url)
+    events.browser_action("navigate", detail=url, url=url)
     nav_text = mcp_text(await asyncio.wait_for(nav.ainvoke({"url": url}), timeout=timeout))
+
+    # Screenshot before reading the tree, so a watcher sees the page at the
+    # moment the decision about it is made rather than afterwards.
+    if thread_id and (path := await capture(toolset, thread_id, events.next_seq())) is not None:
+        events.browser_frame(path, url=url)
+
+    events.browser_action("snapshot", detail="reading the page")
     snap_text = mcp_text(await asyncio.wait_for(snap.ainvoke({}), timeout=timeout))
 
     if looks_blocked(nav_text) or looks_blocked(snap_text):
@@ -144,7 +156,11 @@ async def _navigate_and_snapshot(toolset: McpToolset, url: str, timeout: float) 
 
 
 async def browse_chain(
-    toolset: McpToolset, targets: Sequence[tuple[str, str]], *, timeout: float = 45.0
+    toolset: McpToolset,
+    targets: Sequence[tuple[str, str]],
+    *,
+    timeout: float = 45.0,
+    thread_id: str | None = None,
 ) -> dict[str, Any]:
     """Try each (label, url) in order until one returns real content.
 
@@ -155,7 +171,7 @@ async def browse_chain(
 
     for index, (label, url) in enumerate(targets):
         try:
-            text = await _navigate_and_snapshot(toolset, url, timeout)
+            text = await _navigate_and_snapshot(toolset, url, timeout, thread_id)
             return {
                 "ok": True,
                 "source_used": label,
@@ -167,6 +183,7 @@ async def browse_chain(
         except BlockedError:
             attempts.append({"target": label, "outcome": "blocked"})
             log.info("browser_blocked", target=label, remaining=len(targets) - index - 1)
+            events.browser_blocked(label, "the site refused an automated visitor")
         except Exception as exc:
             attempts.append({"target": label, "outcome": f"{type(exc).__name__}: {str(exc)[:120]}"})
             log.warning("browser_target_failed", target=label, error=type(exc).__name__)
@@ -188,7 +205,12 @@ def _wikivoyage_url(city: str) -> str:
 
 
 async def research_destination(
-    toolset: McpToolset, city: str, query: str = "", *, timeout: float = 45.0
+    toolset: McpToolset,
+    city: str,
+    query: str = "",
+    *,
+    timeout: float = 45.0,
+    thread_id: str | None = None,
 ) -> dict[str, Any]:
     """Read live destination guidance for a city.
 
@@ -207,6 +229,7 @@ async def research_destination(
             ("google", f"https://www.google.com/search?q={quote(q)}"),
         ],
         timeout=timeout,
+        thread_id=thread_id,
     )
 
 
@@ -218,22 +241,31 @@ async def research_hotels(
     travelers: int = 2,
     *,
     timeout: float = 45.0,
+    thread_id: str | None = None,
 ) -> dict[str, Any]:
     """Search live hotel availability and prices.
 
-    Commercial booking sites block automated browsers as a matter of course, so
-    the chain continuing past booking.com is the normal case here, not a defect.
+    Indian aggregators lead the chain: they are what a traveller here would
+    actually book through, and they carry rupee prices directly rather than
+    requiring a conversion. Commercial booking sites block automated browsers as
+    a matter of course, so the chain continuing past them is the normal case
+    rather than a defect.
     """
-    booking = "https://www.booking.com/searchresults.html?" + urlencode(
-        {"ss": destination, "group_adults": max(1, travelers), "no_rooms": 1}
-    )
-    q = f"{destination} {budget_level} hotels prices {nights} nights"
+    q = f"{destination} {budget_level} hotels price per night {nights} nights"
     return await browse_chain(
         toolset,
         [
-            ("booking.com", booking),
+            (
+                "makemytrip",
+                f"https://www.makemytrip.com/hotels/hotel-listing/?searchText={quote(destination)}",
+            ),
+            (
+                "goibibo",
+                f"https://www.goibibo.com/hotels/hotels-in-{quote(destination.split(',')[0].strip().lower().replace(' ', '-'))}-ct/",
+            ),
             ("bing", f"https://www.bing.com/search?q={quote(q)}"),
             ("duckduckgo", f"https://duckduckgo.com/html/?q={quote(q)}"),
         ],
         timeout=timeout,
+        thread_id=thread_id,
     )

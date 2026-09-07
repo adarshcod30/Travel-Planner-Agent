@@ -93,11 +93,13 @@ def make_research_node(settings: Settings | None = None):
     and quietly ignore whatever the factory resolved for this request.
     """
 
-    async def _research(state: TripState) -> dict[str, Any]:
+    async def _research(state: TripState, config: RunnableConfig | None = None) -> dict[str, Any]:
         if research_gate(state) == {}:
             log.debug("research_skipped", reason="revision kept the destination")
             return {}
-        return await research_node(state, settings)
+        # LangGraph passes config to a node that declares it; the research node
+        # needs the thread id to key its screenshot directory.
+        return await research_node(state, settings, config)
 
     _research.__name__ = "research"
     return _research

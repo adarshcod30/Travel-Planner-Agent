@@ -28,6 +28,9 @@ plan — just one whose notes say the research was unavailable.
 import asyncio
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
+
+from travel_planner.core import events
 from travel_planner.core.config import Settings, get_settings
 from travel_planner.core.logging import get_logger
 from travel_planner.core.state import TripState
@@ -58,7 +61,9 @@ async def _call(
         return None
 
 
-async def gather_research(state: TripState, settings: Settings | None = None) -> list[str]:
+async def gather_research(
+    state: TripState, settings: Settings | None = None, thread_id: str | None = None
+) -> list[str]:
     """Run every lookup concurrently and return them as prompt-ready notes."""
     settings = settings or get_settings()
     timeout = settings.mcp_tool_timeout_seconds
@@ -74,6 +79,7 @@ async def gather_research(state: TripState, settings: Settings | None = None) ->
     season = state.get("season") or ""
     interests = " ".join(state.get("interests") or [])
 
+    events.phase("researching", f"live lookups for {place}")
     toolset = await load_toolset(settings)
 
     async def browse() -> tuple[Any, Any]:
@@ -85,9 +91,11 @@ async def gather_research(state: TripState, settings: Settings | None = None) ->
         async with browser_session(settings) as browser:
             if browser is None:
                 return None, None
-            web = await research_destination(browser, dest.city, interests, timeout=timeout)
+            web = await research_destination(
+                browser, dest.city, interests, timeout=timeout, thread_id=thread_id
+            )
             hotels = await research_hotels(
-                browser, place, nights, level, travelers, timeout=timeout
+                browser, place, nights, level, travelers, timeout=timeout, thread_id=thread_id
             )
             return web, hotels
 
@@ -160,7 +168,11 @@ async def gather_research(state: TripState, settings: Settings | None = None) ->
     return notes
 
 
-async def research_node(state: TripState, settings: Settings | None = None) -> dict[str, Any]:
+async def research_node(
+    state: TripState,
+    settings: Settings | None = None,
+    config: RunnableConfig | None = None,
+) -> dict[str, Any]:
     """Graph node. Always returns; never raises.
 
     `settings` is threaded in from the v5 factory so a per-run override — which
@@ -168,8 +180,11 @@ async def research_node(state: TripState, settings: Settings | None = None) -> d
     back to the process settings here would silently ignore the run's config
     while the factory logged that it had applied it.
     """
+    # Frames are stored per thread, so the live view and the cleanup both key
+    # off the same id Aegra already uses for the conversation.
+    thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
     try:
-        notes = await gather_research(state, settings)
+        notes = await gather_research(state, settings, thread_id)
     except Exception as exc:
         log.error("research_failed", error=f"{type(exc).__name__}: {str(exc)[:200]}", exc_info=True)
         notes = [f"Research: unavailable this run ({type(exc).__name__})."]

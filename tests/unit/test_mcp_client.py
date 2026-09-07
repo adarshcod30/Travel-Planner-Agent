@@ -31,10 +31,46 @@ def _settings(**overrides) -> Settings:
 # --- connections ----------------------------------------------------------------
 
 
-def test_all_four_servers_are_configured_by_default():
+def test_default_servers_are_configured():
     conns = build_connections(_settings())
-    assert set(conns) == {"playwright", "filesystem", "fetch", "travel"}
-    assert all(c["transport"] == "stdio" for c in conns.values())
+    assert set(conns) == {"playwright", "fetch", "travel", "tavily"}
+
+
+def test_tavily_is_remote_not_a_subprocess():
+    """Tavily is hosted: an HTTPS endpoint, no launcher, nothing spawned."""
+    conns = build_connections(_settings(mcp_enabled_servers="tavily", tavily_api_key="k"))
+    assert conns["tavily"]["transport"] == "streamable_http"
+    assert conns["tavily"]["url"].startswith("https://mcp.tavily.com/")
+
+
+def test_tavily_is_skipped_without_a_key():
+    """An unset key must drop the server, not produce a URL ending in '='."""
+    assert build_connections(_settings(mcp_enabled_servers="tavily", tavily_api_key="")) == {}
+
+
+def test_redact_hides_the_key_from_anything_loggable():
+    """Tavily carries its key in the query string, so a raw connection in a log
+    line or an error message would leak it."""
+    from travel_planner.tools.mcp.client import redact
+
+    conn = build_connections(_settings(mcp_enabled_servers="tavily", tavily_api_key="tvly-secret"))[
+        "tavily"
+    ]
+    assert "tvly-secret" in conn["url"], "precondition: the real URL carries the key"
+    assert "tvly-secret" not in str(redact(conn))
+    assert redact(conn)["url"].endswith("?<redacted>")
+
+
+def test_http_client_logging_is_suppressed():
+    """httpx logs every request URL at INFO. With Tavily's key in the query
+    string that writes the credential to the server log on every call."""
+    import logging
+
+    from travel_planner.core.logging import configure_logging
+
+    configure_logging()
+    for name in ("httpx", "httpcore"):
+        assert logging.getLogger(name).level >= logging.WARNING, name
 
 
 def test_enabled_servers_is_honoured():

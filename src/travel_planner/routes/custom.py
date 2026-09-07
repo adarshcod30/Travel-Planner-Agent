@@ -10,14 +10,27 @@ than duplicated in the frontend, where it would drift the first time a version
 changed.
 """
 
+import asyncio
+import contextlib
 from typing import Any
 from uuid import UUID, uuid5
 
-from fastapi import FastAPI
+from fastapi import Body, FastAPI, HTTPException
+from pydantic import BaseModel
 
 from travel_planner.agents import AGENT_REGISTRY
 from travel_planner.core.config import get_settings
+from travel_planner.core.logging import get_logger
+from travel_planner.core.storage import (
+    complete_trip,
+    ensure_schema,
+    purge_thread,
+    storage_stats,
+    sweep_abandoned,
+)
 from travel_planner.tools.mcp.client import browser_capacity
+
+log = get_logger(__name__)
 
 app = FastAPI()
 
@@ -218,3 +231,109 @@ async def deep_health() -> dict[str, Any]:
         "browsers": browser_capacity(settings),
         "max_orchestrator_iterations": settings.max_orchestrator_iterations,
     }
+
+
+# ---------------------------------------------------------------------------
+# Trips — archive on completion, then reclaim the thread
+# ---------------------------------------------------------------------------
+
+
+class CompleteTripRequest(BaseModel):
+    """What the client sends when a plan is finished.
+
+    The state comes from the client because the client already has it — it just
+    rendered the plan from the same object. Reading it back server-side would
+    mean re-deriving a checkpoint we are about to delete, for no gain. The
+    thread id is validated against the database, so a caller cannot archive a
+    trip against a thread that never existed.
+    """
+
+    thread_id: str
+    graph_id: str
+    state: dict[str, Any]
+
+
+@app.post("/trips/complete", tags=["trips"])
+async def complete(req: CompleteTripRequest = Body(...)) -> dict[str, Any]:
+    """Archive a finished plan and delete everything that produced it.
+
+    The asymmetry is the point: the plan is a few kilobytes and is what the user
+    came for, while the checkpoints behind it are ~110 KB per run and will never
+    be replayed once the trip is finalised.
+    """
+    settings = get_settings()
+    if not settings.purge_thread_on_complete:
+        return {"archived": False, "purged": False, "reason": "purge_thread_on_complete is false"}
+    try:
+        return await complete_trip(req.thread_id, req.graph_id, req.state)
+    except Exception as exc:
+        log.error(
+            "complete_trip_failed", thread_id=req.thread_id, error=f"{type(exc).__name__}: {exc}"
+        )
+        raise HTTPException(500, f"could not complete trip: {type(exc).__name__}") from exc
+
+
+@app.delete("/trips/thread/{thread_id}", tags=["trips"])
+async def discard(thread_id: str) -> dict[str, Any]:
+    """Throw a thread away without archiving it — the 'discard this plan' path."""
+    return {"removed": await purge_thread(thread_id)}
+
+
+@app.post("/admin/sweep", tags=["admin"])
+async def sweep(older_than_days: int | None = None) -> dict[str, Any]:
+    """Purge abandoned threads and any orphaned checkpoints.
+
+    Exposed as a route so a systemd timer or cron can call it, and so it can be
+    triggered by hand while watching the numbers move.
+    """
+    days = (
+        older_than_days if older_than_days is not None else get_settings().abandoned_thread_ttl_days
+    )
+    return await sweep_abandoned(days)
+
+
+@app.get("/admin/storage", tags=["admin"])
+async def storage() -> dict[str, Any]:
+    return await storage_stats()
+
+
+# ---------------------------------------------------------------------------
+# Background maintenance
+# ---------------------------------------------------------------------------
+
+_sweeper: asyncio.Task | None = None
+SWEEP_INTERVAL_SECONDS = 3600
+
+
+async def _sweep_loop() -> None:
+    """Sweep abandoned threads hourly.
+
+    Abandoned runs are the growth that nobody notices: someone opens the
+    planner, changes their mind, closes the tab, and leaves a full run's worth
+    of checkpoints with no plan to show for it. Completed trips clean themselves
+    up; these would not.
+    """
+    settings = get_settings()
+    while True:
+        await asyncio.sleep(SWEEP_INTERVAL_SECONDS)
+        try:
+            await sweep_abandoned(settings.abandoned_thread_ttl_days)
+        except Exception as exc:
+            log.warning("sweep_failed", error=f"{type(exc).__name__}: {str(exc)[:160]}")
+
+
+@app.on_event("startup")
+async def _start_maintenance() -> None:
+    """Create the trips table and start the sweeper.
+
+    Aegra merges this sub-app's routes into its own application, and whether a
+    sub-app's lifespan runs depends on how it is mounted — so failures here are
+    logged and swallowed rather than taking the server down. `/admin/sweep`
+    remains callable either way.
+    """
+    global _sweeper
+    with contextlib.suppress(Exception):
+        await ensure_schema()
+    if _sweeper is None:
+        _sweeper = asyncio.create_task(_sweep_loop())
+        log.info("sweeper_started", interval_seconds=SWEEP_INTERVAL_SECONDS)

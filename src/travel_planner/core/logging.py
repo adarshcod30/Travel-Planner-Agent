@@ -33,6 +33,13 @@ def configure_logging() -> None:
     # INFO on every call; that is noise in a nine-agent graph.
     logging.getLogger("langchain_aws").setLevel(logging.WARNING)
 
+    # httpx logs every request line at INFO, including the full URL. Tavily's
+    # MCP endpoint carries its API key as a query parameter, so that would write
+    # the key into the server log and into journald on every single call. This
+    # is a credential leak, not noise — raise the level before anything connects.
+    for noisy in ("httpx", "httpcore", "mcp.client.streamable_http"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
     shared = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,

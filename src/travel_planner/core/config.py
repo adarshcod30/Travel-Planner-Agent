@@ -100,8 +100,23 @@ class Settings(BaseSettings):
     fetch_mcp_command: str = "uvx"
     fetch_mcp_args: str = "mcp-server-fetch"
 
+    # Tavily is a hosted MCP server: no subprocess, no npx, just an HTTPS
+    # endpoint. The key is a query parameter on it, so it is stored on its own
+    # and the URL is assembled at use — a full URL in config would end up in
+    # logs and error messages the first time a connection failed.
+    tavily_api_key: str = ""
+    tavily_mcp_base: str = "https://mcp.tavily.com/mcp/"
+
     travel_mcp_command: str = "python"
     travel_mcp_args: str = "-m travel_mcp.server"
+
+    # --- Storage / retention ---
+    database_url: str = "postgresql://travel_planner:travel_planner@localhost:5432/travel_planner"
+    # A trip is archived and its thread purged as soon as the plan is finalised.
+    # Set false to keep threads around for debugging a run after the fact.
+    purge_thread_on_complete: bool = True
+    # Threads never completed are swept after this many days.
+    abandoned_thread_ttl_days: int = 7
 
     # --- Logging -----------------------------------------------------------------
     log_level: str = "INFO"
@@ -143,6 +158,13 @@ class Settings(BaseSettings):
     @property
     def fetch_mcp_arg_list(self) -> list[str]:
         return self.fetch_mcp_args.split()
+
+    @property
+    def tavily_mcp_url(self) -> str | None:
+        """The endpoint, with the key attached. None when unconfigured."""
+        if not self.tavily_api_key.strip():
+            return None
+        return f"{self.tavily_mcp_base}?tavilyApiKey={self.tavily_api_key.strip()}"
 
     @property
     def enabled_mcp_servers(self) -> tuple[str, ...]:

@@ -51,7 +51,20 @@ EXPECTED_TOOLS: dict[str, tuple[str, ...]] = {
     "filesystem": ("read_file", "write_file"),
     "fetch": ("fetch",),
     "travel": ("get_weather_forecast", "convert_currency"),
+    "tavily": ("tavily_search",),
 }
+
+
+def redact(conn: dict[str, Any]) -> dict[str, Any]:
+    """A connection safe to log.
+
+    Tavily carries its API key in the URL query string, so any log line, error
+    message or debug dump that includes a raw connection would leak it.
+    """
+    safe = dict(conn)
+    if "url" in safe:
+        safe["url"] = safe["url"].split("?")[0] + ("?<redacted>" if "?" in safe["url"] else "")
+    return safe
 
 
 def _stdio(command: str, args: Sequence[str], **extra: Any) -> dict[str, Any]:
@@ -86,6 +99,13 @@ def build_connections(settings: Settings | None = None) -> dict[str, dict[str, A
                 )
             case "fetch":
                 conns[name] = _stdio(settings.fetch_mcp_command, settings.fetch_mcp_arg_list)
+            case "tavily":
+                # Hosted, so there is no launcher to check and nothing to spawn.
+                url = settings.tavily_mcp_url
+                if url is None:
+                    log.warning("mcp_tavily_skipped", reason="TAVILY_API_KEY is not set")
+                    continue
+                conns[name] = {"transport": "streamable_http", "url": url}
             case "travel":
                 # Launched with this interpreter so it resolves inside the venv
                 # regardless of what `python` means on the caller's PATH.

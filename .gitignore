@@ -88,3 +88,9 @@ frontend/.env.local
 
 # Cross-trip memory graph — local state, not source
 data/memory.json
+
+# Assistant scratch files. Next writes these on every dev start unless
+# `agentRules: false` is set in next.config.ts, which it is — this is the
+# second line of defence.
+AGENTS.md
+TOOLING.md

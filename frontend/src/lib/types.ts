@@ -174,6 +174,9 @@ export interface ThreadState {
 
 export interface TripRequest {
   request: string;
+  /** Where the traveller starts. Asked rather than assumed — it decides the
+   *  mode of travel and therefore every cost figure in the plan. */
+  origin: string;
   days: number;
   interests: string[];
   budget_level: BudgetLevel;

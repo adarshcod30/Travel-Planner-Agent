@@ -4,25 +4,31 @@ import { useState } from "react";
 import type { BudgetLevel, TripRequest } from "@/lib/types";
 
 const INTEREST_OPTIONS = [
-  "food", "temples", "history", "museums", "beach", "nature",
-  "nightlife", "shopping", "adventure", "wellness", "family", "art",
+  "food", "history", "temples", "beaches", "hills", "wildlife",
+  "trekking", "shopping", "nightlife", "wellness", "family", "art",
 ];
+
+/** Where most requests will start from, offered so nobody has to type them. */
+const COMMON_ORIGINS = ["Delhi", "Mumbai", "Bengaluru", "Kolkata", "Chennai", "Hyderabad", "Jaipur"];
 
 const PRESETS: { label: string; trip: TripRequest }[] = [
   {
-    label: "Kyoto · temples & food",
-    trip: { request: "Temples and food in Kyoto", days: 3, interests: ["temples", "food"],
-            budget_level: "mid-range", season: "November", travelers: 2 },
+    label: "Forts & street food",
+    trip: { request: "Forts and street food, somewhere I can reach by train", origin: "Delhi",
+            days: 3, interests: ["history", "food"], budget_level: "mid-range",
+            season: "November", travelers: 2 },
   },
   {
-    label: "Somewhere warm · beaches",
-    trip: { request: "Somewhere warm with good beaches and cheap food", days: 5, interests: ["beach", "food"],
-            budget_level: "budget", season: "January", travelers: 2 },
+    label: "Beaches on a budget",
+    trip: { request: "Beaches and seafood without spending much", origin: "Bengaluru",
+            days: 5, interests: ["beaches", "food"], budget_level: "budget",
+            season: "January", travelers: 2 },
   },
   {
-    label: "Lisbon · long weekend",
-    trip: { request: "A relaxed long weekend in Lisbon", days: 4, interests: ["food", "history"],
-            budget_level: "mid-range", season: "May", travelers: 2 },
+    label: "Hills, long weekend",
+    trip: { request: "Somewhere cool in the hills for a long weekend", origin: "Mumbai",
+            days: 4, interests: ["hills", "trekking"], budget_level: "mid-range",
+            season: "March", travelers: 2 },
   },
 ];
 
@@ -65,6 +71,26 @@ export function TripForm({
           </button>
         ))}
       </div>
+
+      <Field label="Starting from">
+        <input
+          value={trip.origin}
+          onChange={(e) => set("origin", e.target.value)}
+          disabled={disabled}
+          placeholder="Delhi"
+          list="common-origins"
+          className="w-full rounded-md border border-line bg-ink px-3 py-2 text-sm text-body placeholder:text-muted/50 focus:border-accent/50 focus:outline-none disabled:opacity-50"
+        />
+        <datalist id="common-origins">
+          {COMMON_ORIGINS.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+        <p className="mt-1 text-[11px] text-muted/70">
+          Decides whether this is a train, a domestic flight or an international trip — and
+          every rupee figure downstream.
+        </p>
+      </Field>
 
       <Field label="What kind of trip?">
         <textarea
@@ -139,7 +165,7 @@ export function TripForm({
 
       <button
         type="submit"
-        disabled={disabled || !trip.request.trim()}
+        disabled={disabled || !trip.request.trim() || !trip.origin.trim()}
         className="w-full rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {disabled ? "Planning…" : "Plan this trip"}

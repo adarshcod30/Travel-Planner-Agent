@@ -187,8 +187,9 @@ function Placeholder({ phase, versionLabel }: { phase: RunPhase; versionLabel?: 
         {phase === "idle" && (
           <p className="text-xs leading-relaxed text-muted/70">
             Each version is a working system. Run the same request through more than one
-            and the differences — parallelism, a self-audit loop, a human gate, live
-            research — show up in the timeline on the right.
+            and the differences — parallelism, a self-audit loop, memory of your last
+            trip, a plan you mark up section by section, live research — show up in the
+            timeline on the right.
           </p>
         )}
       </div>

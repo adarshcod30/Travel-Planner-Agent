@@ -15,7 +15,10 @@ export function StatusBar({
   error?: string;
 }) {
   const dest = state.destination;
-  const decision = state.orchestrator_decision;
+  // The decision survives in state after the run ends, so a finished plan would
+  // otherwise read "Complete ... re-running budget" — describing work that
+  // already happened as if it were still in flight.
+  const decision = phase === "running" ? state.orchestrator_decision : null;
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-xs">
@@ -49,7 +52,11 @@ export function StatusBar({
 
       {state.budget && (
         <span className="text-muted">
-          {state.budget.currency} <span className="text-bright">{state.budget.total.toLocaleString()}</span>
+          <span className="text-bright">
+            {state.budget.currency === "INR"
+              ? `\u20b9${state.budget.total.toLocaleString("en-IN")}`
+              : `${state.budget.currency} ${state.budget.total.toLocaleString()}`}
+          </span>
         </span>
       )}
 

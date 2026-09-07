@@ -19,9 +19,10 @@ import type { TripRequest, TripState, VersionMeta } from "@/lib/types";
  */
 
 const DEFAULT_TRIP: TripRequest = {
-  request: "Temples and food in Kyoto",
+  request: "Forts and street food, somewhere I can reach by train",
+  origin: "Delhi",
   days: 3,
-  interests: ["temples", "food"],
+  interests: ["history", "food"],
   budget_level: "mid-range",
   season: "November",
   travelers: 2,

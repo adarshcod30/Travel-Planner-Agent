@@ -59,6 +59,7 @@ export function VersionSwitcher({
             <Capability on={active.parallel} label="parallel" />
             <Capability on={active.orchestrated} label="orchestrated" />
             <Capability on={active.human_in_the_loop} label="human gate" />
+            <Capability on={active.section_review} label="section review" />
             <Capability on={active.live_research} label="live research" />
             <Capability on={active.cross_trip_memory} label="memory" />
           </div>

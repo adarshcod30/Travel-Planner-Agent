@@ -17,6 +17,7 @@ from fastapi import FastAPI
 
 from travel_planner.agents import AGENT_REGISTRY
 from travel_planner.core.config import get_settings
+from travel_planner.tools.mcp.client import browser_capacity
 
 app = FastAPI()
 
@@ -212,5 +213,8 @@ async def deep_health() -> dict[str, Any]:
             "mode": settings.mcp_mode,
             "enabled_servers": list(settings.enabled_mcp_servers),
         },
+        # Browser occupancy is the first thing to check when v5 runs start
+        # queueing: Aegra's own /health knows about runs, not about Chrome.
+        "browsers": browser_capacity(settings),
         "max_orchestrator_iterations": settings.max_orchestrator_iterations,
     }

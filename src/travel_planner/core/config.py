@@ -80,6 +80,14 @@ class Settings(BaseSettings):
     mcp_enabled_servers: str = "playwright,filesystem,fetch,travel"
     mcp_tool_timeout_seconds: float = 45.0
 
+    # A live browser costs roughly 1.3 GB across its process tree, and Aegra's
+    # queue — Redis or otherwise — limits *runs*, not browsers. v1 to v4 launch
+    # none at all, so a run limit either throttles cheap versions needlessly or
+    # lets expensive ones pile up. This caps the thing that is actually scarce.
+    # Runs past the cap wait for a slot rather than launching another Chrome.
+    max_concurrent_browsers: int = 2
+    browser_slot_timeout_seconds: float = 180.0
+
     playwright_mcp_url: str = "http://localhost:8931/mcp"
     playwright_mcp_headless: bool = True
     playwright_mcp_command: str = "npx"

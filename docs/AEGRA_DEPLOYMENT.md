@@ -26,20 +26,46 @@ PostgreSQL 18 + pgvector   ← native install
    Next.js  ── proxies through route handlers
 ```
 
-## Why no Redis
+## Two concurrency limits, protecting two different things
 
-`REDIS_BROKER_ENABLED=false` selects Aegra's `LocalExecutor`: runs execute
-in-process as asyncio tasks. No Redis, no worker processes, no lease bookkeeping.
+### Redis worker queue — caps runs
 
-The trade-off is explicit and Aegra warns about it at startup: **no crash
-recovery and no horizontal scaling.** A run interrupted by a process restart is
-lost rather than reclaimed by another worker. That is the right trade for a
-single-instance deployment and the wrong one the moment a second instance
-exists.
+`REDIS_BROKER_ENABLED=true` selects Aegra's `WorkerExecutor`: a Redis BLPOP job
+queue with lease-based crash recovery, sized `WORKER_COUNT × N_JOBS_PER_WORKER`.
 
-To switch, set `REDIS_BROKER_ENABLED=true` and `REDIS_URL`. Aegra then uses a
-Redis job queue with lease-based recovery, and capacity becomes
-`WORKER_COUNT × N_JOBS_PER_WORKER`.
+```bash
+brew install redis && brew services start redis      # apt install redis-server on Linux
+```
+
+The reason to run it is **crash recovery**, more than throughput. Under
+`LocalExecutor` a run is an in-process asyncio task: restart Aegra and it is
+gone, leaving its thread `running` forever. That is tolerable for a 12-second
+run and not for one holding a live booking flow.
+
+`REDIS_BROKER_ENABLED=false` still works and needs no Redis at all — a
+reasonable choice for a laptop demo, and Aegra warns clearly at startup about
+what is being given up.
+
+### Browser semaphore — caps browsers
+
+The run queue **cannot** solve the memory problem, because runs and browsers are
+not proportional: v1 to v4 launch no browser at all, while v5 launches one
+costing ~1.3 GB across nine processes. A run limit low enough to protect memory
+would throttle the cheap versions pointlessly; one high enough for them would
+let browsers pile up.
+
+So `browser_session()` acquires from a semaphore sized by
+`MAX_CONCURRENT_BROWSERS` before spawning anything. Runs past the cap wait, and
+`BROWSER_SLOT_TIMEOUT_SECONDS` bounds that wait so a caller degrades rather than
+hangs. Check occupancy with:
+
+```bash
+curl -s localhost:2026/health/deep | python3 -c "import sys,json;print(json.load(sys.stdin)['browsers'])"
+# {'limit': 2, 'in_use': 0, 'free': 2}
+```
+
+Size it from host memory, not from taste: roughly 1.5 GB per concurrent browser,
+leaving headroom for Postgres, Aegra and the OS.
 
 ## First run
 

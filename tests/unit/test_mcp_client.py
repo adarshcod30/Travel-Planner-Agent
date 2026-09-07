@@ -1,5 +1,9 @@
 """MCP connection construction and the toolset's degradation behaviour."""
 
+import asyncio
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+
 import pytest
 
 from travel_planner.core.config import Settings, get_settings
@@ -13,7 +17,11 @@ from travel_planner.tools.mcp.browser import (
     research_hotels,
     snapshot_body,
 )
-from travel_planner.tools.mcp.client import McpToolset, build_connections
+from travel_planner.tools.mcp.client import McpToolset, browser_capacity, build_connections
+
+
+async def _async_value(v):
+    return v
 
 
 def _settings(**overrides) -> Settings:
@@ -211,3 +219,104 @@ async def test_hotel_chain_leads_with_booking():
 def test_snapshot_body_strips_the_envelope():
     assert snapshot_body(_page('  - link "a"')) == '- link "a"'
     assert snapshot_body("no envelope here") == "no envelope here"
+
+
+# --- browser concurrency cap -----------------------------------------------------
+#
+# Aegra's queue — Redis or LocalExecutor — limits concurrent *runs*. It cannot
+# limit browsers, because v1-v4 launch none and v5 launches one per run. A run
+# limit low enough to protect memory would throttle the cheap versions; one high
+# enough for them would let browsers pile up. Hence a separate cap on the scarce
+# resource, tested here for the property that matters: it is never exceeded.
+
+
+def test_capacity_reports_the_configured_limit():
+    from travel_planner.tools.mcp.client import browser_capacity
+
+    cap = browser_capacity(_settings(max_concurrent_browsers=3))
+    assert cap == {"limit": 3, "in_use": 0, "free": 3}
+
+
+async def test_cap_is_never_exceeded_under_concurrency(monkeypatch):
+    """Six simultaneous sessions against a cap of two."""
+    import travel_planner.tools.mcp.client as mod
+
+    settings = _settings(max_concurrent_browsers=2)
+    live = 0
+    peak = 0
+
+    @asynccontextmanager
+    async def fake_launch(*_a, **_k):
+        nonlocal live, peak
+        live += 1
+        peak = max(peak, live)
+        try:
+            yield McpToolset()
+        finally:
+            live -= 1
+
+    # Replace only the launch, keeping the real semaphore logic under test.
+    monkeypatch.setattr(
+        mod, "MultiServerMCPClient", lambda *_a, **_k: SimpleNamespace(session=fake_launch)
+    )
+    monkeypatch.setattr(mod, "load_mcp_tools", lambda *_a, **_k: _async_value([]))
+    mod._browser_slots.clear()
+
+    async def one():
+        async with mod.browser_session(settings):
+            await asyncio.sleep(0.05)
+
+    await asyncio.gather(*(one() for _ in range(6)))
+    assert peak <= 2, f"cap breached: {peak} concurrent browsers"
+    assert browser_capacity(settings)["in_use"] == 0, "a slot leaked"
+
+
+async def test_slot_is_released_when_the_session_fails_to_start(monkeypatch):
+    """A launch failure must not permanently consume a slot."""
+    import travel_planner.tools.mcp.client as mod
+
+    settings = _settings(max_concurrent_browsers=1)
+    mod._browser_slots.clear()
+
+    def boom(*_a, **_k):
+        raise RuntimeError("playwright would not start")
+
+    monkeypatch.setattr(mod, "MultiServerMCPClient", boom)
+    async with mod.browser_session(settings) as ts:
+        assert ts is None
+    assert browser_capacity(settings)["free"] == 1, "the slot was not returned"
+
+
+async def test_slot_is_released_when_the_caller_raises(monkeypatch):
+    import travel_planner.tools.mcp.client as mod
+
+    settings = _settings(max_concurrent_browsers=1)
+    mod._browser_slots.clear()
+
+    @asynccontextmanager
+    async def fake_launch(*_a, **_k):
+        yield McpToolset()
+
+    monkeypatch.setattr(
+        mod, "MultiServerMCPClient", lambda *_a, **_k: SimpleNamespace(session=fake_launch)
+    )
+    monkeypatch.setattr(mod, "load_mcp_tools", lambda *_a, **_k: _async_value([]))
+
+    with pytest.raises(ValueError):
+        async with mod.browser_session(settings):
+            raise ValueError("the caller blew up mid-browse")
+
+    assert browser_capacity(settings)["free"] == 1, "the slot was not returned"
+
+
+async def test_waiting_for_a_slot_times_out_rather_than_hanging(monkeypatch):
+    import travel_planner.tools.mcp.client as mod
+
+    settings = _settings(max_concurrent_browsers=1, browser_slot_timeout_seconds=0.1)
+    mod._browser_slots.clear()
+    mod._slots(1)  # occupy the only slot
+    await mod._slots(1).acquire()
+
+    async with mod.browser_session(settings) as ts:
+        assert ts is None, "a caller that cannot get a slot must degrade, not hang"
+    mod._slots(1).release()

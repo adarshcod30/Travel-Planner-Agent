@@ -148,6 +148,37 @@ class McpToolset:
         return len(self.tools)
 
 
+#: Guards the number of live browsers, not the number of runs.
+#:
+#: Keyed by size so changing the limit in a test does not leave a stale
+#: semaphore behind. Module-level state is right here: the cap is a property of
+#: the machine's memory, shared by every run in the process.
+_browser_slots: dict[int, asyncio.Semaphore] = {}
+
+
+def _slots(limit: int) -> asyncio.Semaphore:
+    if limit not in _browser_slots:
+        _browser_slots[limit] = asyncio.Semaphore(limit)
+    return _browser_slots[limit]
+
+
+async def _release(sem: asyncio.Semaphore) -> None:
+    """Hand a browser slot back.
+
+    Registered on the exit stack so it runs whether the session ended normally,
+    failed to start, or the caller's own block raised.
+    """
+    sem.release()
+
+
+def browser_capacity(settings: Settings | None = None) -> dict[str, int]:
+    """Current browser occupancy, for the health route and the UI."""
+    settings = settings or get_settings()
+    limit = settings.max_concurrent_browsers
+    free = max(0, _slots(limit)._value)
+    return {"limit": limit, "in_use": limit - free, "free": free}
+
+
 @asynccontextmanager
 async def browser_session(settings: Settings | None = None) -> AsyncIterator[McpToolset | None]:
     """Hold one Playwright MCP session open and yield tools bound to it.
@@ -172,7 +203,22 @@ async def browser_session(settings: Settings | None = None) -> AsyncIterator[Mcp
         yield None
         return
 
+    # Wait for a browser slot before spawning anything. Without this, Aegra
+    # accepts every run immediately and five concurrent v5 runs become five
+    # Chromes — roughly 6.5 GB — with nothing in between. A run queue caps runs;
+    # this caps the resource that is actually scarce.
+    sem = _slots(settings.max_concurrent_browsers)
+    if sem.locked():
+        log.info("browser_waiting_for_slot", **browser_capacity(settings))
+    try:
+        await asyncio.wait_for(sem.acquire(), timeout=settings.browser_slot_timeout_seconds)
+    except TimeoutError:
+        log.warning("browser_slot_timeout", waited=settings.browser_slot_timeout_seconds)
+        yield None
+        return
+
     stack = AsyncExitStack()
+    stack.push_async_callback(_release, sem)
     try:
         client = MultiServerMCPClient({"playwright": conn})
         session = await stack.enter_async_context(client.session("playwright"))
@@ -194,8 +240,8 @@ async def browser_session(settings: Settings | None = None) -> AsyncIterator[Mcp
     try:
         yield toolset
     finally:
-        await stack.aclose()
-        log.info("browser_session_closed")
+        await stack.aclose()  # also releases the slot
+        log.info("browser_session_closed", **browser_capacity(settings))
 
 
 async def load_toolset(settings: Settings | None = None) -> McpToolset:

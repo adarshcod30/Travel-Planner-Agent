@@ -33,7 +33,7 @@ def _render_destination(dest: DestinationChoice | None) -> str:
 def _render_budget(budget: BudgetBreakdown | None, nights: int | None) -> str:
     if budget is None:
         return "Budget breakdown: not available; price to the budget level alone"
-    currency = budget.currency or "USD"
+    currency = budget.currency or "INR"
     line = f"Budget breakdown: hotel {budget.hotel:.0f} {currency} of {budget.total:.0f} {currency} total"
     if budget.hotel <= 0:
         return line + "; the hotel line is empty, so price to the budget level alone"

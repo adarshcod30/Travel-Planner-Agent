@@ -118,3 +118,35 @@ def test_budget_currency_cannot_be_anything_but_rupees():
     assert BudgetBreakdown(**kw).currency == "INR"
     with pytest.raises(ValidationError):
         BudgetBreakdown(**kw, currency="USD")
+
+
+def test_an_empty_budget_is_rejected_rather_than_finalised():
+    """Observed live: a plan shipped with every category at zero and a Rs 0
+    total. `with_structured_output` surfaces this as a parsing error, so the
+    repair loop retries instead of letting it through."""
+    import pytest
+    from pydantic import ValidationError
+
+    from travel_planner.core.state import BudgetBreakdown
+
+    with pytest.raises(ValidationError, match="budget is empty"):
+        BudgetBreakdown(hotel=0, food=0, transport=0, activities=0, miscellaneous=0)
+
+
+def test_one_empty_category_is_still_fine():
+    """Only the whole budget being zero is impossible. A trip with nothing
+    spent on miscellaneous is ordinary."""
+    from travel_planner.core.state import BudgetBreakdown
+
+    b = BudgetBreakdown(hotel=9500, food=8800, transport=3200, activities=0, miscellaneous=0)
+    assert b.total == 21500
+
+
+def test_a_negative_category_is_rejected():
+    import pytest
+    from pydantic import ValidationError
+
+    from travel_planner.core.state import BudgetBreakdown
+
+    with pytest.raises(ValidationError):
+        BudgetBreakdown(hotel=-100, food=1, transport=1, activities=1, miscellaneous=1)

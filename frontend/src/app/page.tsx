@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { HitlPanel } from "@/components/HitlPanel";
+import { PlanDocument } from "@/components/PlanDocument";
 import { ResearchPanel } from "@/components/ResearchPanel";
+import { ReviewPanel } from "@/components/ReviewPanel";
 import { RunTimeline } from "@/components/RunTimeline";
 import { StatusBar } from "@/components/StatusBar";
 import { TripForm } from "@/components/TripForm";
 import { VersionSwitcher } from "@/components/VersionSwitcher";
 import { createThread, getThreadState, listVersions, streamRun } from "@/lib/aegra";
-import { Markdown } from "@/lib/markdown";
 import type {
   PlanReviewInterrupt,
   RunPhase,
@@ -145,14 +145,12 @@ export default function PlannerPage() {
       <section className="space-y-4">
         <StatusBar phase={phase} state={state} elapsed={elapsed} error={error} />
 
-        {interrupt && <HitlPanel interrupt={interrupt} onResume={resume} busy={busy} />}
+        {interrupt && <ReviewPanel interrupt={interrupt} onResume={resume} busy={busy} />}
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0 space-y-4">
             {state.final_plan ? (
-              <article className="rounded-lg border border-line bg-surface px-5 py-4">
-                <Markdown source={state.final_plan} />
-              </article>
+              <PlanDocument plan={state.final_plan} revisions={state.revisions} />
             ) : (
               <Placeholder phase={phase} versionLabel={version?.label} />
             )}

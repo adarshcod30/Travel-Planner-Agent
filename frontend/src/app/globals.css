@@ -121,3 +121,78 @@ body {
 .running-dot {
   animation: pulse-ring 1.2s ease-in-out infinite;
 }
+
+/*
+ * Print — the plan as a document you can keep.
+ *
+ * Export is the browser's own print-to-PDF rather than a rendering library:
+ * the plan is already styled Markdown, every platform can save a print to
+ * PDF, and it costs no dependency, no font bundling and no server round trip.
+ * The whole app is hidden except the element marked `data-print-root`, which
+ * is then restored to normal document flow — position and overflow from the
+ * app layout would otherwise clip it to one page.
+ */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  [data-print-root],
+  [data-print-root] * {
+    visibility: visible;
+  }
+  [data-print-root] {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    max-height: none;
+    overflow: visible;
+    border: 0;
+    padding: 0;
+    background: #fff;
+    color: #111;
+  }
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #fff;
+    color: #111;
+  }
+  .plan h1,
+  .plan h2,
+  .plan h3,
+  .plan strong {
+    color: #111;
+  }
+  .plan h2 {
+    border-bottom-color: #ccc;
+    /* A section should not start at the foot of a page with nothing under it. */
+    break-after: avoid;
+    break-inside: avoid;
+  }
+  .plan em {
+    color: #555;
+  }
+  .plan th {
+    background: #f2f2f2;
+    color: #111;
+  }
+  .plan th,
+  .plan td,
+  .plan hr {
+    border-color: #ccc;
+  }
+  .plan table,
+  .plan li {
+    break-inside: avoid;
+  }
+  .plan code {
+    background: #f2f2f2;
+  }
+
+  @page {
+    margin: 18mm 16mm;
+  }
+}

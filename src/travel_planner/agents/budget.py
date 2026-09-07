@@ -1,4 +1,4 @@
-"""Budget specialist: whole-trip cost estimate in USD for every traveler.
+"""Budget specialist: whole-trip cost estimate in rupees for every traveler.
 
 Runs after the hotel and attraction specialists when a graph version has them,
 and prices from their concrete output — chosen nightly rates, a named list of
@@ -23,7 +23,8 @@ _DEFAULT_NIGHTS = 3
 _MAX_ATTRACTIONS = 12
 
 _TASK = (
-    "Produce the whole-trip budget for all travelers in USD as one object matching the schema. "
+    "Produce the whole-trip budget for all travelers in Indian rupees (INR) as one object "
+    "matching the schema. "
     "The total must be exactly hotel + food + transport + activities + miscellaneous."
 )
 
@@ -57,10 +58,10 @@ def _render_pricing_basis(days: int | None, travelers: int) -> str:
 def _render_hotels(hotels: HotelList | None) -> str:
     if hotels is None or not hotels.hotels:
         return "Chosen hotels: not available. Estimate a typical nightly rate for the budget level."
-    lines = ["Chosen hotels (rate is per room per night, USD):"]
+    lines = ["Chosen hotels (rate is per room per night, INR):"]
     for h in hotels.hotels:
         lines.append(
-            f"  {h.name}: {h.tier}, ${h.price_per_night:,.0f}/night, rating {h.rating:.1f}"
+            f"  {h.name}: {h.tier}, Rs {h.price_per_night:,.0f}/night, rating {h.rating:.1f}"
         )
     return "\n".join(lines)
 

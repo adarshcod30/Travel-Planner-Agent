@@ -145,7 +145,7 @@ def test_messages_include_trip_context_and_upstream_values():
     assert "4 days" in human
     assert "November" in human
     assert HOTEL_NAME in human
-    assert "$210/night" in human
+    assert "Rs 210/night" in human, "hotel rates are quoted in rupees, not dollars"
     assert ATTRACTION_NAME in human
     assert FEEDBACK in human
     assert "Nights of lodging to price: 4" in human

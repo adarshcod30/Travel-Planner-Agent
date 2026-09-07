@@ -77,7 +77,7 @@ def _render_itinerary(itinerary: Itinerary | None, days: int | None) -> str:
 def _render_budget(budget: BudgetBreakdown | None) -> str:
     if budget is None:
         return "Budget breakdown: not available"
-    currency = budget.currency or "USD"
+    currency = budget.currency or "INR"
     line_sum = (
         budget.hotel + budget.food + budget.transport + budget.activities + budget.miscellaneous
     )

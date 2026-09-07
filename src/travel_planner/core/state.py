@@ -109,11 +109,11 @@ class BudgetBreakdown(BaseModel):
     reliably a small model fills it correctly.
     """
 
-    hotel: float
-    food: float
-    transport: float
-    activities: float
-    miscellaneous: float
+    hotel: float = Field(ge=0)
+    food: float = Field(ge=0)
+    transport: float = Field(ge=0)
+    activities: float = Field(ge=0)
+    miscellaneous: float = Field(ge=0)
     total: float = Field(
         default=0.0,
         description="Sum of the categories. Recomputed server-side; do not rely on it.",
@@ -137,6 +137,17 @@ class BudgetBreakdown(BaseModel):
         computed = round(
             self.hotel + self.food + self.transport + self.activities + self.miscellaneous, 2
         )
+        if computed <= 0:
+            # Observed live: a plan finalised with every category at zero and a
+            # ₹0 total, which no reader would believe and no downstream agent
+            # can price against. There is no repair for it after the fact, but
+            # there is one before: `with_structured_output` surfaces this as a
+            # parsing error, so the repair loop retries with the message below
+            # instead of letting an empty budget through.
+            raise ValueError(
+                "the budget is empty — every category is zero. Estimate real rupee figures "
+                "for hotel, food, transport, activities and miscellaneous."
+            )
         object.__setattr__(self, "total", computed)
         return self
 

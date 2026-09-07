@@ -9,7 +9,18 @@
 
 export type BudgetLevel = "budget" | "mid-range" | "luxury";
 export type ModelTier = "high" | "mid" | "low" | "fallback";
-export type HumanDecision = "accept" | "edit" | "response" | "ignore";
+export type HumanDecision = "accept" | "edit" | "response" | "ignore" | "comments";
+
+/** Names a specialist the graph can re-run. */
+export type AgentName =
+  | "destination"
+  | "weather"
+  | "attraction"
+  | "budget"
+  | "hotel"
+  | "customs"
+  | "packing"
+  | "itinerary";
 
 /** One graph, as described by the server's own /versions route. */
 export interface VersionMeta {
@@ -24,6 +35,7 @@ export interface VersionMeta {
   human_in_the_loop: boolean;
   live_research: boolean;
   cross_trip_memory: boolean;
+  section_review: boolean;
   notes: string;
 }
 
@@ -97,23 +109,60 @@ export interface TripState {
   iteration?: number | null;
   human_decision?: HumanDecision | null;
   human_feedback?: string | null;
+  section_comments?: SectionComment[] | null;
+  revisions?: Revision[] | null;
   research_notes?: string[] | null;
   final_plan?: string | null;
   agent_runs?: AgentRun[];
   errors?: AgentError[];
 }
 
-/** The payload the human gate sends when it interrupts. */
-export interface PlanReviewInterrupt {
-  type: "plan_review";
+/**
+ * One addressable part of a draft.
+ *
+ * `owner` is what makes a comment routable: a section with an owner names the
+ * specialist that will re-run for it, and one without — the reviewer's own
+ * audit, the research provenance — can be read but not revised.
+ */
+export interface PlanSection {
+  key: string;
+  title: string;
+  owner: AgentName | null;
+  body: string;
+}
+
+/** One remark, pinned to one section. */
+export interface SectionComment {
+  section: string;
+  comment: string;
+}
+
+/** One completed round of review, as the graph recorded it. */
+export interface Revision {
   iteration: number;
+  decision: HumanDecision;
+  comments: SectionComment[];
+  feedback: string | null;
+  agents_rerun: AgentName[];
+  at: string;
+}
+
+/** The payload v4's review gate sends when it interrupts. */
+export interface PlanReviewInterrupt {
+  type: "section_review";
+  iteration: number;
+  sections: PlanSection[];
+  /** The same sections joined, for anything that just wants the document. */
   draft: string;
   review: Review | null;
+  revisions: Revision[];
   config: {
     allow_accept: boolean;
+    allow_comments: boolean;
     allow_edit: boolean;
     allow_respond: boolean;
     allow_ignore: boolean;
+    revision_rounds_left: number;
   };
 }
 

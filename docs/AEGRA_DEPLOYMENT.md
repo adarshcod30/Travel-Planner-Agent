@@ -138,6 +138,21 @@ you do not supply it. That is proportionate for a demo link. It is one shared
 secret, not accounts — a real deployment wants an identity provider in the
 reverse proxy.
 
+### The tunnel lives only as long as its process
+
+Closing the terminal, the laptop sleeping, or the process being killed all take
+the URL down immediately — a quick tunnel has no persistence and its hostname is
+not reusable, so the next run publishes a different one. That is the right
+default for a demo link and the wrong one for anything people depend on; for
+that, a named tunnel bound to a domain you control, or a real deployment.
+
+`serve_public.sh` refuses to start if the port is already in use, and its
+cleanup releases the port on the way out. Both matter because `npx next start`
+is a wrapper around a `next-server` child that does the listening: killing only
+the pid the script recorded leaves that child holding the port and silently
+blocking the next run. Cleanup therefore kills the recorded process *and*
+whatever still holds the port.
+
 ### Firewall and network caveats
 
 - **macOS** prompts once, on the first incoming connection, whether `node` may

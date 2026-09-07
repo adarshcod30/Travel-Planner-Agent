@@ -36,12 +36,38 @@ export APP_ACCESS_CODE
 
 TUNNEL_LOG=$(mktemp -t tp-tunnel)
 FRONTEND_PID=""; TUNNEL_PID=""
+
+# `npx next start` is a wrapper: it spawns a next-server child that does the
+# listening. Killing only the pid this script recorded leaves that child alive,
+# holding the port and blocking the next run — observed, not theoretical. So
+# cleanup kills the recorded pid AND whatever still holds the port, which is
+# correct regardless of how many layers the launcher happens to add.
+free_port() {
+  local pids
+  pids=$(lsof -ti:"$1" 2>/dev/null || true)
+  [[ -n "$pids" ]] || return 0
+  kill $pids 2>/dev/null || true
+  sleep 1
+  pids=$(lsof -ti:"$1" 2>/dev/null || true)
+  [[ -n "$pids" ]] && kill -9 $pids 2>/dev/null || true
+}
+
+CLEANED=""
 cleanup() {
+  [[ -n "$CLEANED" ]] && return 0
+  CLEANED=1
   [[ -n "$TUNNEL_PID" ]] && kill "$TUNNEL_PID" 2>/dev/null || true
   [[ -n "$FRONTEND_PID" ]] && kill "$FRONTEND_PID" 2>/dev/null || true
-  echo; echo "Tunnel closed. The public URL is dead."
+  free_port "$PORT"
+  echo; echo "Tunnel closed and port ${PORT} released. The public URL is dead."
 }
 trap cleanup EXIT INT TERM
+
+if lsof -ti:"$PORT" >/dev/null 2>&1; then
+  echo "Port ${PORT} is already in use (pid $(lsof -ti:"$PORT" | tr '\n' ' '))." >&2
+  echo "Stop it first, or run with a different PORT." >&2
+  exit 1
+fi
 
 echo "== Building the frontend"
 (cd frontend && npm run build >/dev/null)

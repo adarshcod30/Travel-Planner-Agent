@@ -14,6 +14,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from travel_planner.agents.weather import WeatherAgent
 from travel_planner.core.exceptions import StructuredOutputError
 from travel_planner.core.state import AgentRun, DestinationChoice, WeatherReport
+from travel_planner.prompts.context import INDIA_CONTEXT
 from travel_planner.prompts.weather import SYSTEM_PROMPT
 
 DISTINCTIVE_REASON = "Peak momiji foliage at Tofuku-ji and Eikan-do"
@@ -54,7 +55,10 @@ def test_messages_on_empty_state():
     assert len(msgs) == 2
     assert isinstance(msgs[0], SystemMessage)
     assert isinstance(msgs[1], HumanMessage)
-    assert msgs[0].content == SYSTEM_PROMPT
+    # The system message is the shared India context plus this agent's own
+    # prompt, so the agent-specific part must be present rather than equal.
+    assert SYSTEM_PROMPT in msgs[0].content
+    assert INDIA_CONTEXT in msgs[0].content
     human = msgs[1].content
     assert "not available" in human
     assert "unknown" in human.lower()

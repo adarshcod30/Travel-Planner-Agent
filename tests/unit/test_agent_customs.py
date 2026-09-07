@@ -20,6 +20,7 @@ from travel_planner.core.state import (
     LocalCustoms,
     TripState,
 )
+from travel_planner.prompts.context import INDIA_CONTEXT
 
 INVOKE_PATH = "travel_planner.agents.base.invoke_structured"
 
@@ -99,7 +100,9 @@ def test_messages_on_empty_state_does_not_raise():
     assert len(msgs) == 2
     assert isinstance(msgs[0], SystemMessage)
     assert isinstance(msgs[1], HumanMessage)
-    assert msgs[0].content == CustomsAgent.system_prompt
+    # System message = shared India context + this agent's own prompt.
+    assert CustomsAgent.system_prompt in msgs[0].content
+    assert INDIA_CONTEXT in msgs[0].content
 
 
 def test_messages_on_empty_state_flag_missing_destination():
@@ -114,8 +117,10 @@ def test_messages_on_full_state_include_destination_and_upstream_detail():
     assert "Japan" in text
     assert REASON in text
     assert "kaiseki" in text
-    # The shared trip context is rendered first.
-    assert text.startswith("Destination: Kyoto, Japan")
+    # The shared trip context is rendered first, and now leads with the origin —
+    # every cost downstream depends on where the traveller starts.
+    assert text.startswith("Travelling from:")
+    assert "Destination: Kyoto, Japan" in text
     assert "Duration: 4 days" in text
     assert "temples, food" in text
 

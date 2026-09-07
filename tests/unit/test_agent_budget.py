@@ -23,6 +23,7 @@ from travel_planner.core.state import (
     HotelList,
 )
 from travel_planner.prompts import budget as prompt_mod
+from travel_planner.prompts.context import INDIA_CONTEXT
 
 HOTEL_NAME = "Hotel Granvia Kyoto"
 ATTRACTION_NAME = "Fushimi Inari Taisha"
@@ -123,7 +124,9 @@ def test_messages_on_empty_state():
     assert len(messages) == 2
     assert isinstance(messages[0], SystemMessage)
     assert isinstance(messages[1], HumanMessage)
-    assert messages[0].content == prompt_mod.SYSTEM_PROMPT
+    # System message = shared India context + this agent's own prompt.
+    assert prompt_mod.SYSTEM_PROMPT in messages[0].content
+    assert INDIA_CONTEXT in messages[0].content
     assert messages[1].content.strip()
 
 

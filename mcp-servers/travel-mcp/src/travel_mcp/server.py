@@ -35,6 +35,20 @@ from travel_mcp.data import (
     VISA_DEFAULT,
     VISA_RULES,
 )
+from travel_mcp.india import (
+    AIR_FARE_BANDS,
+    BUS_FARE_PER_HOUR,
+    CITIES,
+    CITY_BY_NAME,
+    DAILY_COSTS,
+    DISCLAIMER_IN,
+    FESTIVALS,
+    HOTEL_TARIFF,
+    RAIL_CLASS_NAMES,
+    RAIL_FARE_PER_HOUR,
+    SEASONS,
+    gst_rate,
+)
 
 mcp = FastMCP(
     "travel-mcp",
@@ -371,6 +385,260 @@ def search_destinations_catalog(
         "catalogue_size": len(DESTINATIONS),
         "source": "reference-catalogue",
         "note": "A curated offline catalogue, not a live search over all destinations.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# India
+#
+# Trips in this system start in India, and the questions that decide a plan here
+# are different: how far by train rather than which airline, which GST slab the
+# tariff falls into, and whether a festival has made the week unbookable.
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool
+def get_indian_city_info(city: str) -> dict[str, Any]:
+    """Rail station code, airport code, region and best months for an Indian city.
+
+    The station code is what IRCTC needs and what a traveller will actually type;
+    the airport code decides whether flying is even an option.
+
+    Args:
+        city: City name, e.g. "Jaipur" or "Kochi".
+
+    Returns:
+        station_code, airport_code, state, region, tags, best_months, and rough
+        rail hours from Delhi — or a list of known cities when unrecognised.
+    """
+    entry = CITY_BY_NAME.get(_norm(city))
+    if entry is None:
+        return {
+            "error": f"{city!r} is not in the reference set",
+            "known_cities": sorted(c["city"] for c in CITIES),
+            "note": DISCLAIMER_IN,
+        }
+    season = SEASONS.get(entry["region"], {})
+    return {
+        **entry,
+        "season_peak": season.get("peak", []),
+        "season_avoid": season.get("avoid", []),
+        "season_note": season.get("why", ""),
+        "source": "reference-table",
+        "note": DISCLAIMER_IN,
+    }
+
+
+@mcp.tool
+def estimate_domestic_travel(origin: str, destination: str, travelers: int = 1) -> dict[str, Any]:
+    """Compare train and flight for a domestic Indian journey, in rupees.
+
+    Rail fares are estimated from journey hours, because Indian rail pricing is
+    distance-based and close to linear. Air fares come from a distance band. Both
+    are per person unless `travelers` is given.
+
+    Args:
+        origin: Starting city.
+        destination: Destination city.
+        travelers: Number of people; totals are multiplied by this.
+
+    Returns:
+        A rail option per class and an air estimate, with the recommendation and
+        why — usually "the train is overnight and costs a fifth as much".
+    """
+    a, b = CITY_BY_NAME.get(_norm(origin)), CITY_BY_NAME.get(_norm(destination))
+    if a is None or b is None:
+        unknown = [c for c, e in ((origin, a), (destination, b)) if e is None]
+        return {
+            "error": f"not in the reference set: {', '.join(unknown)}",
+            "known_cities": sorted(c["city"] for c in CITIES),
+            "note": DISCLAIMER_IN,
+        }
+
+    # Rail hours between two cities, approximated via Delhi as a hub. Crude for
+    # journeys that do not pass near Delhi, and labelled as such.
+    hours = abs(a["rail_hours_from_delhi"] - b["rail_hours_from_delhi"])
+    if a["region"] != b["region"]:
+        hours = max(hours, a["rail_hours_from_delhi"] + b["rail_hours_from_delhi"]) * 0.6
+    hours = max(2.0, round(hours, 1))
+
+    rail = {
+        code: {
+            "class": RAIL_CLASS_NAMES[code],
+            "fare_per_person": round(rate * hours),
+            "total": round(rate * hours) * max(1, travelers),
+        }
+        for code, rate in RAIL_FARE_PER_HOUR.items()
+        if code in ("SL", "3A", "2A")
+    }
+
+    band = "short" if hours <= 8 else "medium" if hours <= 20 else "long"
+    lo, hi = AIR_FARE_BANDS[band]
+    air = {
+        "band": band,
+        "one_way_per_person": {"low": lo, "high": hi},
+        "return_total": {"low": lo * 2 * max(1, travelers), "high": hi * 2 * max(1, travelers)},
+        "airports": {"from": a["airport_code"], "to": b["airport_code"]},
+    }
+
+    overnight = hours >= 8
+    if not a["airport_code"] or not b["airport_code"]:
+        rec = "train — one of these cities has no usable airport"
+    elif overnight and rail["3A"]["fare_per_person"] * 3 < lo:
+        rec = "train in 3A — it runs overnight, saves a hotel night, and costs well under the fare"
+    elif hours > 20:
+        rec = "fly — the rail journey is over twenty hours"
+    else:
+        rec = "either; the train is cheaper, the flight saves most of a day"
+
+    return {
+        "origin": a["city"],
+        "destination": b["city"],
+        "estimated_rail_hours": hours,
+        "overnight_train_possible": overnight,
+        "rail": rail,
+        "air": air,
+        "recommendation": rec,
+        "currency": "INR",
+        "travelers": max(1, travelers),
+        "source": "distance-band-estimate",
+        "note": f"Rail hours are approximated via Delhi as a hub and are rough for journeys that do not pass near it. {DISCLAIMER_IN}",
+    }
+
+
+@mcp.tool
+def estimate_trip_budget(
+    destination: str, days: int, travelers: int = 2, budget_level: str = "mid-range"
+) -> dict[str, Any]:
+    """A rupee budget for a trip within India, with hotel GST applied.
+
+    GST on accommodation is banded by nightly tariff — nil below ₹1,000, 12% to
+    ₹7,500, 18% above — so a room a little cheaper can fall into a lower slab.
+    Worth surfacing, because it is a real and frequently missed cost.
+
+    Args:
+        destination: Destination city.
+        days: Trip length in days.
+        travelers: Number of people.
+        budget_level: budget, mid-range or luxury.
+
+    Returns:
+        Per-category totals in rupees, the GST slab applied, and per-person-per-day.
+    """
+    level = _norm(budget_level) or "mid-range"
+    if level not in HOTEL_TARIFF:
+        return {
+            "error": f"unknown budget level {budget_level!r}",
+            "supported": sorted(HOTEL_TARIFF),
+        }
+    days = max(1, int(days))
+    travelers = max(1, int(travelers))
+    nights = max(1, days - 1)
+
+    lo, hi = HOTEL_TARIFF[level]
+    tariff = (lo + hi) / 2
+    rate = gst_rate(tariff)
+    rooms = (travelers + 1) // 2  # two to a room
+    hotel_base = tariff * nights * rooms
+    hotel_gst = hotel_base * rate
+
+    daily = DAILY_COSTS[level]
+
+    def mid(pair):
+        return (pair[0] + pair[1]) / 2
+
+    food = mid(daily["food"]) * days * travelers
+    local = mid(daily["local_transport"]) * days * travelers
+    acts = mid(daily["activities"]) * days * travelers
+
+    total = hotel_base + hotel_gst + food + local + acts
+    return {
+        "destination": destination,
+        "days": days,
+        "nights": nights,
+        "travelers": travelers,
+        "rooms": rooms,
+        "budget_level": level,
+        "hotel": {
+            "tariff_per_night": round(tariff),
+            "nights": nights,
+            "rooms": rooms,
+            "base": round(hotel_base),
+            "gst_rate": rate,
+            "gst_amount": round(hotel_gst),
+            "total": round(hotel_base + hotel_gst),
+        },
+        "food": round(food),
+        "local_transport": round(local),
+        "activities": round(acts),
+        "total": round(total),
+        "per_person_per_day": round(total / days / travelers),
+        "currency": "INR",
+        "source": "reference-bands",
+        "note": f"Excludes intercity travel — use estimate_domestic_travel for that. {DISCLAIMER_IN}",
+    }
+
+
+@mcp.tool
+def check_festivals(month: str = "", region: str = "") -> dict[str, Any]:
+    """Festivals that affect travel in a given month or region.
+
+    Festivals move Indian prices and availability far more than weather does:
+    Diwali empties the trains weeks ahead, and Christmas week in Goa commonly
+    triples tariffs. A plan that ignores the calendar will be wrong about cost
+    and about whether anything is bookable at all.
+
+    Args:
+        month: Month name, e.g. "November". Empty returns the full calendar.
+        region: Optional filter, e.g. "Kerala", "Goa", "north".
+
+    Returns:
+        Matching festivals with what each one does to travel.
+    """
+    m, r = _norm(month), _norm(region)
+    matches = [
+        f
+        for f in FESTIVALS
+        if (not m or any(m in _norm(x) for x in f["months"]))
+        and (not r or r in _norm(f["where"]) or _norm(f["where"]) == "nationwide")
+    ]
+    return {
+        "month": month or "any",
+        "region": region or "any",
+        "count": len(matches),
+        "festivals": matches,
+        "source": "reference-calendar",
+        "note": "Dates follow the lunar calendar and shift year to year; confirm exact dates before booking.",
+    }
+
+
+@mcp.tool
+def estimate_bus_fare(
+    hours: float, service: str = "ac_seater", travelers: int = 1
+) -> dict[str, Any]:
+    """Intercity bus fare in rupees — often the only option where rail does not run.
+
+    Args:
+        hours: Journey length in hours.
+        service: ordinary, ac_seater or ac_sleeper.
+        travelers: Number of people.
+
+    Returns:
+        Per-person and total fare.
+    """
+    key = _norm(service).replace(" ", "_").replace("-", "_")
+    if key not in BUS_FARE_PER_HOUR:
+        return {"error": f"unknown service {service!r}", "supported": sorted(BUS_FARE_PER_HOUR)}
+    per = round(BUS_FARE_PER_HOUR[key] * max(0.5, float(hours)))
+    return {
+        "hours": hours,
+        "service": key,
+        "travelers": max(1, travelers),
+        "fare_per_person": per,
+        "total": per * max(1, travelers),
+        "currency": "INR",
+        "source": "reference-bands",
+        "note": DISCLAIMER_IN,
     }
 
 

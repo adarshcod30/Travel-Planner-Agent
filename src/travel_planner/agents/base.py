@@ -23,6 +23,7 @@ from travel_planner.core.config import ModelTier
 from travel_planner.core.exceptions import TravelPlannerError
 from travel_planner.core.logging import get_logger
 from travel_planner.core.state import AgentError, TripState
+from travel_planner.prompts.context import INDIA_CONTEXT
 
 log = get_logger(__name__)
 
@@ -38,6 +39,7 @@ def render_trip_context(state: TripState) -> str:
     where = f"{dest.city}, {dest.country}" if dest else "(destination not yet chosen)"
     interests = ", ".join(state.get("interests") or []) or "not specified"
     lines = [
+        f"Travelling from: {state.get('origin') or 'not specified'}",
         f"Destination: {where}",
         f"Duration: {state.get('days') or 'unspecified'} days",
         f"Season / dates: {state.get('season') or 'unspecified'}",
@@ -73,8 +75,14 @@ class BaseAgent(ABC):
         """Render the task for this agent from the current state."""
 
     def messages(self, state: TripState) -> list[BaseMessage]:
+        """System prompt = shared context, then the agent's own instructions.
+
+        The shared block goes first so the agent-specific prompt can contradict
+        it deliberately where it needs to, and so ten agents cannot drift apart
+        on what "plan for an Indian traveller" means.
+        """
         return [
-            SystemMessage(content=self.system_prompt),
+            SystemMessage(content=f"{INDIA_CONTEXT}\n\n{self.system_prompt}"),
             HumanMessage(content=self.user_prompt(state)),
         ]
 

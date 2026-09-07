@@ -10,6 +10,7 @@ cross-version comparison of the *middle* meaningful.
 from typing import Any
 
 from travel_planner.core.logging import get_logger
+from travel_planner.core.money import compact_rupees, per_person_per_day, rupees
 from travel_planner.core.state import TripState
 
 log = get_logger(__name__)
@@ -49,9 +50,11 @@ def intake_node(state: TripState) -> dict[str, Any]:
     interests = [i for i in (s.strip() for s in raw_interests) if i]
 
     request = (state.get("request") or "").strip() or None
+    origin = (state.get("origin") or "").strip() or None
 
     update: dict[str, Any] = {
         "request": request,
+        "origin": origin,
         "days": days,
         "travelers": travelers,
         "budget_level": level,
@@ -68,6 +71,8 @@ def intake_node(state: TripState) -> dict[str, Any]:
 
 
 #: Everything a run produces, as opposed to what the caller supplies.
+#: `origin` is deliberately absent — it is an input, and a reused thread should
+#: keep it rather than ask again.
 GENERATED_KEYS: tuple[str, ...] = (
     "destination",
     "weather",
@@ -90,7 +95,15 @@ GENERATED_KEYS: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 
 
-def _money(x: float, currency: str = "USD") -> str:
+def _money(x: float, currency: str = "INR") -> str:
+    """Rupees in Indian grouping; anything else falls back to plain grouping.
+
+    The currency check matters because a model can still return USD despite the
+    prompt, and silently printing "₹1,500" over a dollar figure would be worse
+    than printing it honestly as USD.
+    """
+    if (currency or "INR").upper() == "INR":
+        return rupees(x)
     return f"{x:,.0f} {currency}"
 
 
@@ -113,7 +126,9 @@ def render_plan_markdown(state: TripState) -> str:
     if lvl := state.get("budget_level"):
         meta.append(f"**Budget:** {lvl}")
     if trav := state.get("travelers"):
-        meta.append(f"**Travelers:** {trav}")
+        meta.append(f"**Travellers:** {trav}")
+    if origin := state.get("origin"):
+        meta.append(f"**From:** {origin}")
     if season := state.get("season"):
         meta.append(f"**When:** {season}")
     if ints := state.get("interests"):
@@ -179,10 +194,16 @@ def render_plan_markdown(state: TripState) -> str:
         days = state.get("days")
         travelers = state.get("travelers") or 1
         if days:
-            per_day = b.total / days
-            budget_md += f"\n\n{_money(per_day, c)} per day"
-            if travelers > 1:
-                budget_md += f" · {_money(per_day / travelers, c)} per person per day"
+            headline = compact_rupees(b.total) if c.upper() == "INR" else _money(b.total, c)
+            budget_md += f"\n\n**{headline}** total"
+            if c.upper() == "INR":
+                budget_md += f" · {rupees(b.total / days)} per day"
+                if travelers > 1:
+                    budget_md += (
+                        f" · {per_person_per_day(b.total, days, travelers)} per person per day"
+                    )
+            else:
+                budget_md += f" · {_money(b.total / days, c)} per day"
         parts.append(budget_md)
 
     if lc := state.get("customs"):

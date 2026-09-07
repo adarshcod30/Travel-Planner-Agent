@@ -102,7 +102,11 @@ class AttractionList(BaseModel):
 
 
 class BudgetBreakdown(BaseModel):
-    """Whole-trip cost estimate. Flat floats — no nested currency objects."""
+    """Whole-trip cost estimate in rupees, for all travellers combined.
+
+    Flat floats, no nested currency objects — the shallower the schema, the more
+    reliably a small model fills it correctly.
+    """
 
     hotel: float
     food: float
@@ -110,7 +114,14 @@ class BudgetBreakdown(BaseModel):
     activities: float
     miscellaneous: float
     total: float
-    currency: str = Field(default="USD")
+    # A Literal, not a default. A default only applies when the model omits the
+    # field, and it does not omit it — asked for a budget it returned
+    # currency="USD" with the prompt saying rupees throughout, while another
+    # agent wrote rupees in its prose. Two currencies in one plan, no error
+    # anywhere. This makes the wrong answer unrepresentable: the schema rejects
+    # it, and the repair loop turns it into a retry rather than a silent
+    # mislabelling.
+    currency: Literal["INR"] = "INR"
 
 
 class Hotel(BaseModel):
@@ -229,6 +240,10 @@ class TripState(TypedDict):
 
     # --- request ---
     request: NotRequired[str | None]
+    #: Where the traveller starts from. Asked rather than assumed: it decides
+    #: whether a trip is a train, a domestic flight or an international one, and
+    #: every cost figure downstream depends on it.
+    origin: NotRequired[str | None]
     days: NotRequired[int | None]
     interests: NotRequired[list[str] | None]
     budget_level: NotRequired[BudgetLevel | None]

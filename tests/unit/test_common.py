@@ -30,6 +30,7 @@ def test_intake_fills_defaults_on_empty_state():
     out = intake_node({})
     expected = {
         "request": None,
+        "origin": None,
         "days": 3,
         "travelers": 1,
         "budget_level": "mid-range",
@@ -181,15 +182,15 @@ def test_render_full_state_has_every_section():
         "## Notes",
     ):
         assert heading in md, heading
-    assert "**Total** | **780 USD**" in md
+    assert "**Total** | **₹780**" in md
     assert "The packing step could not complete" in md
 
 
 def test_budget_shows_per_day_and_per_person():
     """Arithmetic a reader budgets against — not worth a model call."""
     md = render_plan_markdown(_full_state())
-    assert "390 USD per day" in md, md[md.find("## Budget") :][:300]
-    assert "195 USD per person per day" in md
+    assert "₹390 per day" in md, md[md.find("## Budget") :][:300]
+    assert "₹195 per person per day" in md
 
 
 def test_budget_omits_per_person_for_a_solo_trip():

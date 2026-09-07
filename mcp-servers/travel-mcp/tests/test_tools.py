@@ -10,6 +10,7 @@ import pytest
 from fastmcp import Client
 from travel_mcp.server import mcp
 
+#: The general tools. The India-specific ones are covered in test_india.py.
 EXPECTED_TOOLS = {
     "get_weather_forecast",
     "convert_currency",
@@ -33,9 +34,11 @@ async def _call(client, name, **kwargs):
 # --- registration ---------------------------------------------------------------
 
 
-async def test_exactly_five_tools_with_descriptions(client):
+async def test_every_tool_is_described(client):
+    """A description is not documentation here — the model reads it to decide
+    whether to call the tool at all."""
     tools = await client.list_tools()
-    assert {t.name for t in tools} == EXPECTED_TOOLS
+    assert {t.name for t in tools} >= EXPECTED_TOOLS
     for t in tools:
         assert t.description and len(t.description) > 40, t.name
         assert t.inputSchema["type"] == "object"

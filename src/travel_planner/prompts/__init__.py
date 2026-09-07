@@ -7,6 +7,7 @@ re-exported here so a caller comparing two prompts does not need ten imports.
 
 from travel_planner.prompts.attraction import SYSTEM_PROMPT as ATTRACTION_SYSTEM_PROMPT
 from travel_planner.prompts.budget import SYSTEM_PROMPT as BUDGET_SYSTEM_PROMPT
+from travel_planner.prompts.context import INDIA_CONTEXT
 from travel_planner.prompts.customs import SYSTEM_PROMPT as CUSTOMS_SYSTEM_PROMPT
 from travel_planner.prompts.destination import SYSTEM_PROMPT as DESTINATION_SYSTEM_PROMPT
 from travel_planner.prompts.hotel import SYSTEM_PROMPT as HOTEL_SYSTEM_PROMPT
@@ -22,6 +23,7 @@ __all__ = [
     "CUSTOMS_SYSTEM_PROMPT",
     "DESTINATION_SYSTEM_PROMPT",
     "HOTEL_SYSTEM_PROMPT",
+    "INDIA_CONTEXT",
     "ITINERARY_SYSTEM_PROMPT",
     "ORCHESTRATOR_SYSTEM_PROMPT",
     "PACKING_SYSTEM_PROMPT",

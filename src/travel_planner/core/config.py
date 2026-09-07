@@ -77,7 +77,7 @@ class Settings(BaseSettings):
 
     # --- MCP (v5) ----------------------------------------------------------------
     mcp_mode: McpMode = "stdio"
-    mcp_enabled_servers: str = "playwright,fetch,travel,tavily"
+    mcp_enabled_servers: str = "playwright,fetch,travel,tavily,memory,time"
     mcp_tool_timeout_seconds: float = 45.0
 
     # A live browser costs roughly 1.3 GB across its process tree, and Aegra's
@@ -99,6 +99,18 @@ class Settings(BaseSettings):
 
     fetch_mcp_command: str = "uvx"
     fetch_mcp_args: str = "mcp-server-fetch"
+
+    # Cross-trip memory: home city, dietary needs, airlines, past destinations.
+    # A JSON-backed knowledge graph, so it survives restarts and is inspectable.
+    memory_mcp_command: str = "npx"
+    memory_mcp_args: str = "-y @modelcontextprotocol/server-memory"
+    memory_file_path: str = "./data/memory.json"
+
+    # Timezone and date arithmetic. Travel planning is full of it and models get
+    # it wrong reliably — IST offsets, arrival times across zones, what season a
+    # month falls in at the destination.
+    time_mcp_command: str = "uvx"
+    time_mcp_args: str = "mcp-server-time --local-timezone Asia/Kolkata"
 
     # Tavily is a hosted MCP server: no subprocess, no npx, just an HTTPS
     # endpoint. The key is a query parameter on it, so it is stored on its own
@@ -158,6 +170,14 @@ class Settings(BaseSettings):
     @property
     def fetch_mcp_arg_list(self) -> list[str]:
         return self.fetch_mcp_args.split()
+
+    @property
+    def memory_mcp_arg_list(self) -> list[str]:
+        return self.memory_mcp_args.split()
+
+    @property
+    def time_mcp_arg_list(self) -> list[str]:
+        return self.time_mcp_args.split()
 
     @property
     def tavily_mcp_url(self) -> str | None:

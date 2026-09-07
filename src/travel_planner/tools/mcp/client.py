@@ -33,6 +33,7 @@ import shutil
 import sys
 from collections.abc import AsyncIterator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from langchain_core.tools import BaseTool
@@ -52,6 +53,8 @@ EXPECTED_TOOLS: dict[str, tuple[str, ...]] = {
     "fetch": ("fetch",),
     "travel": ("get_weather_forecast", "convert_currency"),
     "tavily": ("tavily_search",),
+    "memory": ("create_entities", "search_nodes"),
+    "time": ("get_current_time",),
 }
 
 
@@ -99,6 +102,17 @@ def build_connections(settings: Settings | None = None) -> dict[str, dict[str, A
                 )
             case "fetch":
                 conns[name] = _stdio(settings.fetch_mcp_command, settings.fetch_mcp_arg_list)
+            case "memory":
+                # MEMORY_FILE_PATH is how this server is told where to persist;
+                # without it the graph lives in a temp file and every trip
+                # starts from nothing, which defeats the point.
+                conns[name] = _stdio(
+                    settings.memory_mcp_command,
+                    settings.memory_mcp_arg_list,
+                    env={"MEMORY_FILE_PATH": str(Path(settings.memory_file_path).resolve())},
+                )
+            case "time":
+                conns[name] = _stdio(settings.time_mcp_command, settings.time_mcp_arg_list)
             case "tavily":
                 # Hosted, so there is no launcher to check and nothing to spawn.
                 url = settings.tavily_mcp_url

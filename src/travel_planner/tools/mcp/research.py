@@ -36,6 +36,7 @@ from travel_planner.core.logging import get_logger
 from travel_planner.core.state import TripState
 from travel_planner.tools.mcp.browser import mcp_text, research_destination, research_hotels
 from travel_planner.tools.mcp.client import McpToolset, browser_session, load_toolset
+from travel_planner.tools.mcp.memory import recall
 
 log = get_logger(__name__)
 
@@ -59,6 +60,28 @@ async def _call(
             "mcp_tool_failed", tool=names[0], error=f"{type(exc).__name__}: {str(exc)[:160]}"
         )
         return None
+
+
+async def _noop() -> None:
+    """Placeholder for a lookup that does not apply to this trip."""
+    return None
+
+
+async def _live_inr_rate(toolset: McpToolset, timeout: float) -> str | None:
+    """Today's USD to INR rate, fetched live.
+
+    travel-mcp carries a static rate for offline use, but a rupee figure derived
+    from a rate months out of date is quietly wrong. This is also exactly the
+    shape of lookup fetch is for — small, structured, and far faster than
+    opening a browser for it.
+    """
+    raw = await _call(
+        toolset,
+        ("fetch",),
+        {"url": "https://api.frankfurter.app/latest?from=USD&to=INR", "max_length": 400},
+        timeout,
+    )
+    return f"{raw[:200]} (live)" if raw else None
 
 
 async def gather_research(
@@ -99,26 +122,48 @@ async def gather_research(
             )
             return web, hotels
 
-    browse_result, weather, visa, flights = await asyncio.gather(
+    origin = state.get("origin") or "Delhi"
+    domestic = (dest.country or "").strip().lower() == "india"
+
+    # Every configured server contributes something a specialist would otherwise
+    # invent. fetch and memory were previously connected and never called, which
+    # is worse than not configuring them at all: the subprocess cost with none of
+    # the benefit.
+    (
+        browse_result,
+        city_info,
+        travel_opts,
+        budget_bands,
+        festivals,
+        now,
+        live_rate,
+        known,
+    ) = await asyncio.gather(
         browse(),
+        _call(toolset, ("get_indian_city_info",), {"city": dest.city}, timeout),
         _call(
             toolset,
-            ("get_weather_forecast",),
-            {"city": dest.city, "country": dest.country, "month": season},
+            ("estimate_domestic_travel",),
+            {"origin": origin, "destination": dest.city, "travelers": travelers},
             timeout,
-        ),
+        )
+        if domestic
+        else _noop(),
         _call(
             toolset,
-            ("check_visa_requirements",),
-            {"passport_country": "United States", "destination_country": dest.country},
+            ("estimate_trip_budget",),
+            {
+                "destination": dest.city,
+                "days": state.get("days") or 3,
+                "travelers": travelers,
+                "budget_level": level,
+            },
             timeout,
         ),
-        _call(
-            toolset,
-            ("estimate_flight_cost",),
-            {"origin_city": "New York", "destination_city": dest.city, "cabin": "economy"},
-            timeout,
-        ),
+        _call(toolset, ("check_festivals",), {"month": season, "region": dest.city}, timeout),
+        _call(toolset, ("get_current_time",), {"timezone": "Asia/Kolkata"}, timeout),
+        _live_inr_rate(toolset, timeout),
+        recall(toolset),
         return_exceptions=True,
     )
     web, hotels = browse_result if isinstance(browse_result, tuple) else (None, None)
@@ -148,16 +193,23 @@ async def gather_research(
             via += f" — earlier targets refused automated access: {tried}"
         notes.append(f"{label} via {via}:\n{r['content_excerpt'][:NOTE_EXCERPT_CHARS]}")
 
+    if isinstance(known, list) and known:
+        # Placed first, because it changes how everything below should be read.
+        notes.insert(1, "Known about this traveller: " + "; ".join(known[:12]))
+
     _add_browse("Live web research", web)
     _add_browse("Live hotel availability", hotels)
 
     for label, value in (
-        ("Weather reference", weather),
-        ("Visa guidance", visa),
-        ("Flight cost estimate", flights),
+        ("City reference — station and airport codes, seasons", city_info),
+        (f"Train vs flight from {origin}", travel_opts),
+        ("Reference budget bands, hotel GST applied", budget_bands),
+        ("Festivals affecting these dates", festivals),
+        ("Current date and time, IST", now),
+        ("Live USD to INR rate", live_rate),
     ):
         if isinstance(value, str) and value.strip():
-            notes.append(f"{label} (travel-mcp): {value[:600]}")
+            notes.append(f"{label}: {value[:700]}")
 
     if toolset.failed:
         notes.append(

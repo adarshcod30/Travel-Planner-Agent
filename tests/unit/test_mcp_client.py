@@ -38,13 +38,41 @@ def test_enabled_is_not_the_same_as_connectable():
     gets three servers rather than a fourth pointed at a URL ending in '='.
     """
     s = _settings(tavily_api_key="")
-    assert s.enabled_mcp_servers == ("playwright", "fetch", "travel", "tavily")
-    assert set(build_connections(s)) == {"playwright", "fetch", "travel"}
+    assert "tavily" in s.enabled_mcp_servers
+    assert "tavily" not in build_connections(s)
 
 
 def test_tavily_appears_once_a_key_is_present():
-    conns = build_connections(_settings(tavily_api_key="tvly-test"))
-    assert set(conns) == {"playwright", "fetch", "travel", "tavily"}
+    assert "tavily" in build_connections(_settings(tavily_api_key="tvly-test"))
+
+
+def test_all_six_servers_are_enabled_by_default():
+    """Every one of these is called by the research node — none is decorative.
+    fetch and filesystem were previously connected and never used, which costs a
+    subprocess per run for nothing."""
+    s = _settings(tavily_api_key="tvly-test")
+    assert set(s.enabled_mcp_servers) == {
+        "playwright",
+        "fetch",
+        "travel",
+        "tavily",
+        "memory",
+        "time",
+    }
+    assert set(build_connections(s)) == set(s.enabled_mcp_servers)
+
+
+def test_memory_is_told_where_to_persist():
+    """Without MEMORY_FILE_PATH the graph lives in a temp file and every trip
+    starts from nothing — which defeats the point of having it."""
+    conn = build_connections(_settings(mcp_enabled_servers="memory"))["memory"]
+    assert conn["env"]["MEMORY_FILE_PATH"].endswith("memory.json")
+    assert conn["env"]["MEMORY_FILE_PATH"].startswith("/"), "must be absolute"
+
+
+def test_time_server_defaults_to_ist():
+    conn = build_connections(_settings(mcp_enabled_servers="time"))["time"]
+    assert "Asia/Kolkata" in conn["args"]
 
 
 def test_tavily_is_remote_not_a_subprocess():

@@ -85,3 +85,6 @@ frontend/.env.local
 .aider*
 .continue/
 .windsurf/
+
+# Cross-trip memory graph — local state, not source
+data/memory.json

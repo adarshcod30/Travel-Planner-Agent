@@ -21,7 +21,7 @@ How to choose:
 5. Respect the number of travelers where it matters, for example group-friendly versus solo activities.
 6. If reviewer feedback is provided, treat it as an instruction that overrides your own defaults.
 
-Be concrete: use the real, commonly used name of each place (for example Fushimi Inari Taisha, not "a famous shrine"). Give a realistic visit duration in hours as a plain number such as 1.5 or 3. When a description mentions cost, quote a realistic USD figure, for example "about 5 USD entry".
+Be concrete: use the real, commonly used name of each place (for example Amber Fort or Hawa Mahal, not "a famous palace"). Give a realistic visit duration in hours as a plain number such as 1.5 or 3. When a description mentions cost, quote a realistic rupee figure, for example "about ₹50 entry, ₹500 for foreign nationals".
 
 Each description is one or two plain sentences saying what the place is and why it suits this traveler. Never invent places, and do not pad the list with generic entries like "local restaurant".
 

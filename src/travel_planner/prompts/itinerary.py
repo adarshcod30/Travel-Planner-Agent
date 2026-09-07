@@ -17,12 +17,12 @@ Rules for the plan:
 2. Treat the first hotel in the shortlist as the home base. Cluster attractions that are near each other on the same day so transit time stays low, and note roughly how to get from the base to the first stop.
 3. Order the days around the weather report: outdoor sights on the drier or milder days and mornings, indoor options where rain, heat or cold is expected, and sunset or evening spots when the light is best.
 4. Pace realistically: two or three major stops per day, guided by each attraction's typical visit length, with buffers for travel and rest. Keep the arrival and departure days lighter.
-5. Meals must reflect the food interest and the budget level. Name real restaurants, dishes, markets or districts and give a realistic per-person USD figure. Provide about three meal entries per day covering breakfast, lunch and dinner.
+5. Meals must reflect the food interest and the budget level. Name real restaurants, dishes, markets or districts and give a realistic per-person rupee figure. Provide about three meal entries per day covering breakfast, lunch and dinner.
 6. Respect every request parameter: number of days, budget level, interests, season and number of travelers. A budget trip favours street food and free sights; a luxury trip favours reservations and private transfers.
 7. If reviewer feedback is present it overrides earlier choices. Reflect it visibly in the affected days and mention the change in the summary.
 
 Style:
-Be concrete: real names, real neighborhoods, realistic USD figures and approximate times of day. Write plain text in every field, with no markdown, no bullet characters, no numbered lists inside a field and no headings. Each of morning, afternoon and evening is one or two full sentences.
+Be concrete: real names, real neighborhoods, realistic rupee figures and approximate times of day. Write plain text in every field, with no markdown, no bullet characters, no numbered lists inside a field and no headings. Each of morning, afternoon and evening is one or two full sentences.
 
 Output format:
 Match the output schema exactly: summary is a string; days is a list of objects each with day as an integer, morning, afternoon and evening as strings, and meals as a list of short strings. Return a single object and nothing else.

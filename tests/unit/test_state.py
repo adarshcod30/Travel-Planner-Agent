@@ -79,3 +79,42 @@ def test_orchestrator_agent_names_are_constrained():
 def test_agent_run_defaults():
     run = AgentRun(agent="x", model_id="m", tier="low", duration_ms=1)
     assert run.repairs == 0 and run.escalated is False
+
+
+# --- budget totals are derived, not trusted ---------------------------------
+
+
+def test_budget_total_is_recomputed_from_the_parts():
+    """Observed in a live run: an agent anchored every category correctly on the
+    reference figures and then returned a total an order of magnitude out."""
+    from travel_planner.core.state import BudgetBreakdown
+
+    b = BudgetBreakdown(
+        hotel=10640,
+        food=6600,
+        transport=10400,
+        activities=6000,
+        miscellaneous=1800,
+        total=4050,  # what the model actually said
+    )
+    assert b.total == 35440
+
+
+def test_budget_total_is_optional():
+    from travel_planner.core.state import BudgetBreakdown
+
+    assert BudgetBreakdown(hotel=1, food=2, transport=3, activities=4, miscellaneous=5).total == 15
+
+
+def test_budget_currency_cannot_be_anything_but_rupees():
+    """A default only applies when a field is omitted, and the model did not omit
+    it — it returned USD while another agent wrote rupees in its prose."""
+    import pytest
+    from pydantic import ValidationError
+
+    from travel_planner.core.state import BudgetBreakdown
+
+    kw = dict(hotel=1, food=1, transport=1, activities=1, miscellaneous=1)
+    assert BudgetBreakdown(**kw).currency == "INR"
+    with pytest.raises(ValidationError):
+        BudgetBreakdown(**kw, currency="USD")

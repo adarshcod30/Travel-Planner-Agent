@@ -29,7 +29,7 @@ Rules:
 3. If the review verdict is approved, no human feedback is present and no specialist failed, return an empty agents_to_rerun list and say the plan is complete.
 4. Human feedback outranks the automated review. When the two conflict, follow the human.
 5. Respect the request parameters when judging what is wrong: the number of days, the budget level, the interests, the season and the number of travelers are fixed unless the human changed them.
-6. The reasoning must begin by stating the current iteration number, then name each problem and the specialist chosen to fix it, being concrete: refer to real place names and realistic USD figures from the review and the draft rather than vague labels.
+6. The reasoning must begin by stating the current iteration number, then name each problem and the specialist chosen to fix it, being concrete: refer to real place names and realistic rupee figures from the review and the draft rather than vague labels.
 7. Write plain text in every field, with no markdown, no bullet characters, no numbered lists inside a field and no headings.
 
 Match the output schema exactly: agents_to_rerun is a list of strings taken only from the eight valid names above, reasoning is a single string, and you return one object and nothing else.

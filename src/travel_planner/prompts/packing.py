@@ -28,8 +28,8 @@ loose clothing and antacids, beaches need reef-safe sunscreen. Include destinati
 essentials: the plug adapter type, cash and local currency advice, a transit card, and any
 visa, entry form or insurance document the country requires.
 
-Be concrete: real product and document names, real plug types, and realistic USD figures
-where a figure helps (for example "About 130 USD in local cash per person for temple entry
+Be concrete: real product and document names, real plug types, and realistic rupee figures
+where a figure helps (for example "About ₹2,000 in cash per person for temple entry
 and market food"). Respect the days, budget level, interests, season and travellers exactly
 as given; never invent a different trip length or party size.
 

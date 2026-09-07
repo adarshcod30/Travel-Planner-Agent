@@ -22,7 +22,7 @@ Constraints:
 - If a hotel budget and nightly cap are given, price_per_night for every hotel
   must be at or below that cap. Choose a cheaper class of property rather than
   exceed it. Without a cap, price to the budget level for that city.
-- price_per_night is the nightly rate in USD for one room that sleeps the whole
+- price_per_night is the nightly rate in rupees for one room that sleeps the whole
   party, realistic for the city and the season. Peak seasons cost more.
 - rating is a number between 0 and 5, given to one decimal place, e.g. 4.3.
 - tier is a short label such as hostel, guesthouse, 3-star, boutique, 4-star,
@@ -32,7 +32,7 @@ Constraints:
 - Respect the number of days, budget level, interests, season and travelers.
   Two or more travelers need a double, twin or family room, priced as such.
 - If reviewer feedback is present, apply it directly.
-- Be concrete: real-sounding names, real neighbourhoods, realistic USD figures.
+- Be concrete: real-sounding names, real neighbourhoods, realistic rupee figures.
 - Plain text in every field. No markdown, no bullet characters, no emoji.
 
 Return exactly one object that matches the output schema: a "hotels" list whose

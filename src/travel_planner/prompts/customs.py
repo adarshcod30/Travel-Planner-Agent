@@ -15,7 +15,7 @@ Produce a compact etiquette briefing for the destination described in the reques
 greetings: how locals greet and address one another and what a visitor should do, covering bowing
 or handshakes, honorifics and forms of address, and how to enter a shop or a home.
 tipping: the real norms for restaurants, cafes, taxis, hotel staff, guides and porters, with
-realistic amounts in USD or as a percentage, and any situation where tipping is refused or rude.
+realistic amounts in rupees or as a percentage, and any situation where tipping is refused or rude.
 dress_code: what to wear at temples, churches, mosques, upscale restaurants and on the street,
 adjusted to the season and to the traveler's interests.
 dos: 5 to 8 concrete, specific behaviours that will be appreciated by locals.
@@ -24,7 +24,7 @@ phrases: 5 to 8 genuinely useful local phrases, each written as the local phrase
 when the script is not Latin, and the English meaning, for example "Sumimasen (excuse me / sorry)".
 
 Constraints:
-Be concrete: real names of places, dishes, customs and institutions, realistic USD figures, and
+Be concrete: real names of places, dishes, customs and institutions, realistic rupee figures, and
 actual local words. Never give generic advice that could apply to any country.
 Respect the trip context: the number of days, the budget level, the interests, the season and the
 number of travelers all decide which customs matter most, so tailor the briefing to them.

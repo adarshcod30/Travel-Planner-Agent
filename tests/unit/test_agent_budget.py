@@ -98,8 +98,10 @@ def test_class_attributes():
 def test_system_prompt_is_substantive():
     prompt = prompt_mod.SYSTEM_PROMPT
     assert isinstance(prompt, str)
-    assert 15 <= len(prompt.strip().splitlines()) <= 40
-    for word in ("USD", "hotel", "food", "transport", "activities", "miscellaneous", "total"):
+    # Upper bound raised: the prompt now carries the reference-budget guidance
+    # that stops the agent inventing prices it was handed.
+    assert 15 <= len(prompt.strip().splitlines()) <= 60
+    for word in ("INR", "hotel", "food", "transport", "activities", "miscellaneous", "total"):
         assert word in prompt, word
 
 

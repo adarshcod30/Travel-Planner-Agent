@@ -34,6 +34,7 @@ from travel_planner.core import events
 from travel_planner.core.config import Settings, get_settings
 from travel_planner.core.logging import get_logger
 from travel_planner.core.state import TripState
+from travel_planner.tools.mcp import summarise
 from travel_planner.tools.mcp.browser import mcp_text, research_destination, research_hotels
 from travel_planner.tools.mcp.client import McpToolset, browser_session, load_toolset
 from travel_planner.tools.mcp.memory import recall
@@ -67,6 +68,16 @@ async def _noop() -> None:
     return None
 
 
+async def _noop_pair() -> tuple[None, None]:
+    """Stands in for the browse pass when a version has no browser."""
+    return None, None
+
+
+async def _noop_list() -> list[str]:
+    """Stands in for memory recall when a version has none."""
+    return []
+
+
 async def _live_inr_rate(toolset: McpToolset, timeout: float) -> str | None:
     """Today's USD to INR rate, fetched live.
 
@@ -84,11 +95,44 @@ async def _live_inr_rate(toolset: McpToolset, timeout: float) -> str | None:
     return f"{raw[:200]} (live)" if raw else None
 
 
+#: Servers v2 is allowed to use. No browser and no search — that is precisely
+#: what v5 adds, and letting v2 reach them would erase the distinction the two
+#: versions exist to demonstrate.
+REFERENCE_SERVERS = "fetch,travel,time"
+
+
+async def gather_reference(state: TripState, settings: Settings | None = None) -> list[str]:
+    """v2's research: reference tables and small APIs, no browsing.
+
+    Same specialists as v1, but no longer guessing. Station codes, the hotel GST
+    slab, whether the dates collide with a festival and today's exchange rate
+    are all things a model would otherwise invent plausibly and wrongly.
+
+    Deliberately restricted. A browser is slow, heavy and occasionally blocked,
+    and the point of v2 is that grounding in *reference data alone* already
+    beats recall — before any of that cost is paid.
+    """
+    settings = settings or get_settings()
+    scoped = Settings(**{**settings.model_dump(), "mcp_enabled_servers": REFERENCE_SERVERS})
+    return await _lookups(state, scoped, browser=False, thread_id=None)
+
+
 async def gather_research(
     state: TripState, settings: Settings | None = None, thread_id: str | None = None
 ) -> list[str]:
-    """Run every lookup concurrently and return them as prompt-ready notes."""
-    settings = settings or get_settings()
+    """v5's research: everything, including a real browser and cross-trip memory."""
+    return await _lookups(state, settings or get_settings(), browser=True, thread_id=thread_id)
+
+
+async def _lookups(
+    state: TripState, settings: Settings, *, browser: bool, thread_id: str | None
+) -> list[str]:
+    """The shared lookup pass. `browser` decides whether v5's extras run.
+
+    One implementation rather than two, because the difference between the
+    versions is which sources they may reach — not how a note is assembled or
+    how a failure degrades.
+    """
     timeout = settings.mcp_tool_timeout_seconds
 
     dest = state.get("destination")
@@ -111,14 +155,14 @@ async def gather_research(
         Sequential rather than gathered: they share a single browser, and two
         navigations racing in the same tab would clobber each other.
         """
-        async with browser_session(settings) as browser:
-            if browser is None:
+        async with browser_session(settings) as browser_tools:
+            if browser_tools is None:
                 return None, None
             web = await research_destination(
-                browser, dest.city, interests, timeout=timeout, thread_id=thread_id
+                browser_tools, dest.city, interests, timeout=timeout, thread_id=thread_id
             )
             hotels = await research_hotels(
-                browser, place, nights, level, travelers, timeout=timeout, thread_id=thread_id
+                browser_tools, place, nights, level, travelers, timeout=timeout, thread_id=thread_id
             )
             return web, hotels
 
@@ -139,7 +183,7 @@ async def gather_research(
         live_rate,
         known,
     ) = await asyncio.gather(
-        browse(),
+        browse() if browser else _noop_pair(),
         _call(toolset, ("get_indian_city_info",), {"city": dest.city}, timeout),
         _call(
             toolset,
@@ -163,13 +207,13 @@ async def gather_research(
         _call(toolset, ("check_festivals",), {"month": season, "region": dest.city}, timeout),
         _call(toolset, ("get_current_time",), {"timezone": "Asia/Kolkata"}, timeout),
         _live_inr_rate(toolset, timeout),
-        recall(toolset),
+        recall(toolset) if browser else _noop_list(),
         return_exceptions=True,
     )
     web, hotels = browse_result if isinstance(browse_result, tuple) else (None, None)
 
     used = list(toolset.servers)
-    if web is not None:
+    if browser and web is not None:
         used.append("playwright")
     if not used:
         failed = ", ".join(toolset.failed) or "none configured"
@@ -197,19 +241,27 @@ async def gather_research(
         # Placed first, because it changes how everything below should be read.
         notes.insert(1, "Known about this traveller: " + "; ".join(known[:12]))
 
-    _add_browse("Live web research", web)
-    _add_browse("Live hotel availability", hotels)
+    if browser:
+        # Only reported when this version has a browser at all. Saying "the
+        # browser was unavailable" for a version that has none by design would
+        # read as a failure rather than a deliberate difference.
+        _add_browse("Live web research", web)
+        _add_browse("Live hotel availability", hotels)
 
-    for label, value in (
-        ("City reference — station and airport codes, seasons", city_info),
-        (f"Train vs flight from {origin}", travel_opts),
-        ("Reference budget bands, hotel GST applied", budget_bands),
-        ("Festivals affecting these dates", festivals),
-        ("Current date and time, IST", now),
-        ("Live USD to INR rate", live_rate),
+    # Rendered as sentences, not JSON. A correct reference total of Rs 27,140
+    # inside a truncated JSON blob was read as noise and the budget agent fell
+    # back on its own guess of Rs 3,980. Facts have to be legible, not merely
+    # present.
+    for label, value, render in (
+        ("Where this is", city_info, summarise.city_info),
+        (f"Getting there from {origin}", travel_opts, summarise.domestic_travel),
+        ("Reference budget", budget_bands, summarise.trip_budget),
+        ("Festivals", festivals, summarise.festivals),
+        ("Date", now, summarise.current_time),
+        ("Exchange rate", live_rate, summarise.inr_rate),
     ):
         if isinstance(value, str) and value.strip():
-            notes.append(f"{label}: {value[:700]}")
+            notes.append(f"{label}: {render(value)}")
 
     if toolset.failed:
         notes.append(

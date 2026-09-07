@@ -42,7 +42,7 @@ from typing import Annotated, Literal, NotRequired
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing_extensions import TypedDict
 
 # ---------------------------------------------------------------------------
@@ -113,7 +113,32 @@ class BudgetBreakdown(BaseModel):
     transport: float
     activities: float
     miscellaneous: float
-    total: float
+    total: float = Field(
+        default=0.0,
+        description="Sum of the categories. Recomputed server-side; do not rely on it.",
+    )
+
+    @model_validator(mode="after")
+    def _recompute_total(self) -> "BudgetBreakdown":
+        """Derive the total rather than trusting the model's arithmetic.
+
+        Observed: an agent that had anchored every category correctly on the
+        reference figures — hotel Rs 10,640, food Rs 6,600, activities Rs 6,000 —
+        returned a total of Rs 4,050 against a true sum of Rs 35,440. The
+        categories were right and the addition was wrong by an order of
+        magnitude.
+
+        No prompt fixes that reliably, and it does not need one: the total is
+        derivable from the parts. Asking a language model for a number you can
+        compute is inviting a failure mode you never had to have. Same reasoning
+        as the currency Literal below — make the wrong answer unrepresentable.
+        """
+        computed = round(
+            self.hotel + self.food + self.transport + self.activities + self.miscellaneous, 2
+        )
+        object.__setattr__(self, "total", computed)
+        return self
+
     # A Literal, not a default. A default only applies when the model omits the
     # field, and it does not omit it — asked for a budget it returned
     # currency="USD" with the prompt saying rupees throughout, while another
@@ -172,6 +197,26 @@ class LocalCustoms(BaseModel):
     dos: list[str]
     donts: list[str]
     phrases: list[str] = Field(description="Useful local phrases with translations")
+
+
+class WrittenPlan(BaseModel):
+    """v1's entire output: one model, no tools, no specialists.
+
+    Deliberately thinner than what the later versions produce. There is no
+    structured budget because a single unaided pass cannot cost a trip
+    reliably — it can only offer a range and say so. Pretending otherwise by
+    forcing the same schema as v2 would hide exactly the difference v1 exists to
+    demonstrate.
+    """
+
+    summary: str = Field(description="Two or three sentences on the shape of the trip")
+    days: list[str] = Field(description="One paragraph per day, in order")
+    budget_note: str = Field(
+        description="A rough cost range in rupees, with the assumptions stated"
+    )
+    caveats: list[str] = Field(
+        description="What this plan is uncertain about — prices, seasons, availability"
+    )
 
 
 class Review(BaseModel):
@@ -249,6 +294,9 @@ class TripState(TypedDict):
     budget_level: NotRequired[BudgetLevel | None]
     season: NotRequired[str | None]
     travelers: NotRequired[int | None]
+
+    # --- v1 only: a single unaided pass ---
+    written_plan: NotRequired[WrittenPlan | None]
 
     # --- specialist outputs ---
     destination: NotRequired[DestinationChoice | None]

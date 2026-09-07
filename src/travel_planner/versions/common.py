@@ -74,6 +74,7 @@ def intake_node(state: TripState) -> dict[str, Any]:
 #: `origin` is deliberately absent — it is an input, and a reused thread should
 #: keep it rather than ask again.
 GENERATED_KEYS: tuple[str, ...] = (
+    "written_plan",
     "destination",
     "weather",
     "attractions",
@@ -147,6 +148,21 @@ def render_plan_markdown(state: TripState) -> str:
             f"**Wear:** {', '.join(w.clothing)}\n\n"
             f"**Tips:** {'; '.join(w.tips)}"
         )
+
+    # v1 renders differently: prose days, a cost range, and stated caveats
+    # rather than a structured itinerary and budget table.
+    if wp := state.get("written_plan"):
+        lines = ["## The plan", wp.summary, ""]
+        for i, day in enumerate(wp.days, start=1):
+            lines += [f"### Day {i}", day, ""]
+        parts.append("\n".join(lines).rstrip())
+        parts.append(f"## Budget\n{wp.budget_note}")
+        if wp.caveats:
+            # Surfaced rather than buried: this is what separates an honest
+            # single-pass plan from one that merely sounds confident.
+            parts.append(
+                "## Worth checking before you book\n" + "\n".join(f"- {c}" for c in wp.caveats)
+            )
 
     if it := state.get("itinerary"):
         lines = ["## Itinerary", f"_{it.summary}_", ""]

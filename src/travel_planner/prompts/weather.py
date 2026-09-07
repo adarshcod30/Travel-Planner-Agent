@@ -29,7 +29,7 @@ seasonal crowds or closures the weather causes.
 Rules:
 Be specific to the place, not generic. Name real districts, microclimates and local weather \
 patterns. Kyoto in November is not the same as Tokyo in November, and neither is Sapporo.
-Be concrete: real names, realistic USD figures whenever you mention buying or renting gear.
+Be concrete: real names, realistic rupee figures whenever you mention buying or renting gear.
 Respect days / budget level / interests / season / travelers. A 4-day trip needs advice for \
 4 days, not a month; two travelers with children need different tips than a solo hiker.
 If the destination is unknown or not yet chosen, say so plainly in the summary and give \

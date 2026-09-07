@@ -22,7 +22,7 @@ How to decide:
   feedback overrides the original request and any previously chosen destination.
 
 Constraints:
-- Be concrete: use real place names, and if you mention costs use realistic USD figures.
+- Be concrete: use real place names, and if you mention costs use realistic rupee figures.
 - Respect the trip length, budget level, interests, season and traveler count. A city that is
   out of season, out of budget, or too far away for the number of days is a poor choice.
 - Keep the reason to two or three plain sentences that tie the choice back to the request.

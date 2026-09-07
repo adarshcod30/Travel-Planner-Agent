@@ -58,30 +58,39 @@ def assistant_id_for(graph_id: str) -> str:
 VERSIONS: list[dict[str, Any]] = [
     {
         "graph_id": "v1_linear",
-        "label": "v1 · Linear",
-        "headline": "A fixed four-node chain",
-        "adds": "Baseline: shared state, Bedrock, streaming, checkpointing",
-        "agents": ["destination", "itinerary"],
+        "label": "v1 · Ask",
+        "headline": "One agent, no tools, no research",
+        "adds": "The baseline: what a good model does entirely unaided",
+        "agents": ["planner"],
         "parallel": False,
         "orchestrated": False,
         "human_in_the_loop": False,
         "live_research": False,
         "notes": (
-            "The itinerary agent runs with no research to draw on and has to invent "
-            "everything. That limitation is the point — it is what v2 fixes."
+            "Runs on the highest model tier deliberately, so whatever the later "
+            "versions gain cannot be dismissed as v1 having been handicapped. What "
+            "it lacks is not intelligence but research — so it gives a cost range "
+            "rather than a budget, and states what you should verify before booking."
         ),
     },
     {
         "graph_id": "v2_parallel",
-        "label": "v2 · Parallel",
-        "headline": "Four specialists fan out concurrently",
-        "adds": "Concurrent branch execution and reducer-based state merging",
+        "label": "v2 · Research",
+        "headline": "Parallel specialists, grounded in reference data",
+        "adds": "Station codes, GST slabs, festival dates and live exchange rates",
         "agents": ["destination", "weather", "attraction", "budget", "customs", "itinerary"],
         "parallel": True,
         "orchestrated": False,
         "human_in_the_loop": False,
         "live_research": False,
-        "notes": "The itinerary agent now assembles from real specialist output rather than inventing it.",
+        "reference_data": True,
+        "notes": (
+            "Four specialists run concurrently, and a reference pass runs before "
+            "them — so they work from real station codes, the right hotel GST slab "
+            "and today's exchange rate instead of inventing them. No browser: that "
+            "is what v5 adds, and the point here is that reference data alone "
+            "already beats recall."
+        ),
     },
     {
         "graph_id": "v3_orchestrator",

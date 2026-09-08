@@ -178,7 +178,9 @@ async def test_the_first_site_with_prices_wins(monkeypatch):
     assert "from about Rs 1,850" in out["note"]
 
 
-async def test_a_site_showing_no_prices_advances_the_chain(monkeypatch):
+async def test_the_site_being_offered_is_not_listed_as_a_failure(monkeypatch):
+    """It is the page you are being handed, not one that did not answer."""
+
     async def fake_serve(toolset, thread_id, **kw):
         return "expired"
 
@@ -187,8 +189,23 @@ async def test_a_site_showing_no_prices_advances_the_chain(monkeypatch):
     out = await booking.open_booking(
         ts, thread_id="t", targets=[("makemytrip", "https://x.test/a")]
     )
-    assert out["ok"] is False
-    assert out["attempts"] == [{"site": "makemytrip", "outcome": "opened but showed no prices"}]
+    assert out["site"] == "makemytrip"
+    assert out["attempts"] == []
+
+
+async def test_sites_that_really_did_fail_are_still_listed(monkeypatch):
+    async def fake_serve(toolset, thread_id, **kw):
+        return "expired"
+
+    monkeypatch.setattr(booking.handover, "serve", fake_serve)
+    ts = FakeBrowser(["### Snapshot\n```yaml\n- generic: nothing here\n```"])
+    out = await booking.open_booking(
+        ts,
+        thread_id="t",
+        targets=[("makemytrip", "https://x.test/a"), ("goibibo", "https://x.test/b")],
+    )
+    assert out["site"] == "makemytrip", "the first that loaded is the one offered"
+    assert [a["site"] for a in out["attempts"]] == ["goibibo"]
 
 
 async def test_a_page_that_loaded_without_prices_is_offered_to_a_person(monkeypatch):

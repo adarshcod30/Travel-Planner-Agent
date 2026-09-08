@@ -22,6 +22,7 @@ and a frame, so booking is not a black box that reports "done" — it is the sam
 live filmstrip as the research pass, on the pages that matter most.
 """
 
+import contextlib
 import re
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -207,7 +208,12 @@ async def open_booking(
     #: still show no prices — its search form, with the city and dates already
     #: filled in, is one click from real results. That page is worth handing to
     #: a person, and it is the common case rather than the exception.
-    landed: tuple[str, dict[str, Any]] | None = None
+    #:
+    #: The url is kept alongside it because the chain carries on browsing after
+    #: this is recorded: by the time the loop ends the browser is on whichever
+    #: site was tried last, and handing someone a page while naming a different
+    #: one is worse than not offering it at all.
+    landed: tuple[str, str, dict[str, Any]] | None = None
 
     for label, url in targets:
         events.phase("booking", f"opening {label}")
@@ -248,26 +254,37 @@ async def open_booking(
 
         attempts.append({"site": label, "outcome": "opened but showed no prices"})
         if landed is None:
-            landed = (label, page)
+            landed = (label, url, page)
 
     # Nothing quoted a price, but something loaded. Rather than reporting a
     # dead end, put the person in front of it — the search is already set up,
     # and finishing it is a click they can make and the automation cannot.
     if landed is not None:
-        label, page = landed
+        label, url, page = landed
         events.phase("booking", f"{label} loaded but quoted nothing — offering you the browser")
+        # Go back to it first. The chain kept browsing after this page was
+        # recorded, so the browser is on whichever site was tried last.
+        if page.get("url") != (await control.read_page(toolset)).get("url"):
+            with contextlib.suppress(control.ControlError):
+                await control.perform(
+                    toolset, control.Action(kind="navigate", url=url), thread_id=thread_id
+                )
+                page = await control.read_page(toolset)
+
+        # It is the site being offered, not one that failed.
+        rest = [a for a in attempts if a["site"] != label]
         outcome = await _hand_over(toolset, thread_id, "assist", page, settings)
         if outcome == "released":
             page = await control.read_page(toolset)
             return _report(
                 label,
-                page.get("url") or "",
+                page.get("url") or url,
                 page,
-                attempts,
+                rest,
                 handed_over=outcome,
                 prices=extract_prices(page.get("snapshot", "")),
             )
-        return _report(label, page.get("url") or "", page, attempts, handed_over=outcome, prices=[])
+        return _report(label, url, page, rest, handed_over=outcome, prices=[])
 
     log.warning("booking_no_site_answered", tried=[a["site"] for a in attempts])
     return {

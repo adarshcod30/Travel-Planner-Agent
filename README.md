@@ -1,8 +1,8 @@
 # Travel Planner Agent
 
-**Five generations of the same multi-agent travel planner — linear, parallel, orchestrated, human-in-the-loop, and browser-automating — running side by side behind one [Aegra](https://github.com/ibbybuilds/aegra) server, switchable at runtime.**
+**Five generations of the same multi-agent travel planner — linear, parallel, orchestrated, collaborative, and browser-driving — running side by side behind one [Aegra](https://github.com/ibbybuilds/aegra) server, switchable at runtime.** Plans trips from India, priced in rupees. Watch v5 browse in real time and take the browser off it when a site wants a login.
 
-`langgraph` · `aegra` · `agent-protocol` · `amazon-bedrock` · `amazon-nova` · `mcp` · `playwright` · `human-in-the-loop` · `nextjs` · `multi-agent` · `postgres`
+`langgraph` · `aegra` · `agent-protocol` · `amazon-bedrock` · `amazon-nova` · `mcp` · `playwright` · `human-in-the-loop` · `browser-automation` · `nextjs` · `multi-agent` · `postgres`
 
 ---
 
@@ -21,30 +21,46 @@ switching version at runtime is one field in an API call — not a redeploy.
 
 | Version | Architecture | Adds | Agents |
 |---|---|---|---|
-| **v1** `v1_linear` | Fixed sequential chain | Baseline: shared state, Bedrock, streaming, checkpointing | 2 |
-| **v2** `v2_parallel` | Fan-out / fan-in DAG | Concurrent branches, reducer-based state merging | 6 |
-| **v3** `v3_orchestrator` | Fan-out + LLM orchestrator | Self-audit loop, targeted re-runs, bounded iteration | 10 |
-| **v4** `v4_hitl` | v3 + a section-level review gate | Comments pinned to sections route without a model; revision history | 10 |
-| **v5** `v5_mcp` | v4 + 4 MCP servers | Real browser automation, per-run MCP session lifecycle | 10 |
+| **v1** `v1_linear` | One model call | The baseline: what a good model does entirely unaided. Runs on the *highest* tier deliberately, so later gains cannot be dismissed as v1 being handicapped | 1 |
+| **v2** `v2_parallel` | Fan-out / fan-in DAG | Concurrent branches, reducer-merged state, and reference data — station codes, GST slabs, festival dates, live exchange rates | 6 |
+| **v3** `v3_orchestrator` | + reviewer and orchestrator | A self-audit loop with targeted re-runs and a bounded iteration count — and memory, so the second trip starts better than the first | 10 |
+| **v4** `v4_hitl` | + section-level review | The plan arrives as sections you mark up. A comment pinned to one routes to its specialist with **no orchestrator call** | 10 |
+| **v5** `v5_mcp` | + six MCP servers | A real browser you watch working, can take over mid-run, and which opens real booking pages | 10 |
+
+Every version is cumulative: v5 is v1 with four more ideas in it. Running the
+same trip through two of them shows what the idea bought.
 
 ### Measured, not estimated
 
 Real runs against Amazon Nova on Bedrock, through the running Aegra server:
 
-| Version | Wall clock | Agent time | Agent calls | Tokens |
-|---|---|---|---|---|
-| v1 | 7.1s | 7.0s | 2 | 2,656 |
-| v2 | 8.8s | 12.9s | 6 | 8,921 |
-| v3 | 11.9s | 17.8s | 9 | 14,376 |
-| v5 | 21.9s | 18.7s | 9 | 24,692 |
+One request — *"forts and street food, reachable by train"*, from Delhi, three
+days, two travellers — through all five, against Amazon Nova on Bedrock:
 
-v2 and v3 run **more agent-seconds than wall-clock seconds** — that difference
-is the parallel fan-out, 4.1s and 5.9s of it respectively. v5 inverts the
-relationship: its wall clock exceeds its agent time because real browsing is not
-model time.
+| Version | Wall clock | Agent time | Agent calls | Tokens | Budget produced |
+|---|---|---|---|---|---|
+| v1 | 6.0s | 4.3s | 1 | 2,057 | a range, not a figure |
+| v2 | 10.0s | 11.5s | 6 | 14,214 | ₹35,600 |
+| v3 | 32.1s | 33.7s | 14 | 39,696 | ₹30,140 |
+| v4 | 20.1s | 18.1s | 9 | 24,026 | ₹37,000 |
+| v5 | 26.1s | 18.8s | 9 | 31,487 | ₹36,200 |
 
-Across every live run above: **zero structured-output repairs and zero tier
-escalations.**
+Three things in that table are the whole argument.
+
+**v2 runs more agent-seconds than wall-clock seconds.** That gap is the fan-out
+doing its job — four specialists in the time of the slowest one.
+
+**v3 cost 14 calls where v4 cost 9**, for the same request. Its reviewer
+rejected the first draft and its orchestrator inferred what to re-run from
+prose. v4 does not have to infer: you point at the section, and the specialist
+behind it is a dictionary lookup.
+
+**v5 inverts the ratio the other way** — 26.1s wall against 18.8s of agent time,
+because real browsing is not model time.
+
+v1 does not produce a budget at all. It has no research, so it gives a cost
+range and states what to verify before booking, which is the honest output for
+a model working from recall.
 
 ## Architecture
 
@@ -66,8 +82,10 @@ flowchart TB
 
     subgraph MCP["MCP servers (v5)"]
         PW["Playwright<br/>real Chromium"]
-        FS["Filesystem"]
         FT["Fetch"]
+        TV["Tavily<br/>hosted search"]
+        MEM["memory<br/>knowledge graph"]
+        TIME["time"]
         TM["travel-mcp<br/>(written for this project)"]
     end
 
@@ -139,6 +157,49 @@ sequenceDiagram
 Nothing before the gate re-executes on resume — verified: the itinerary agent
 runs once across a pause-and-accept cycle.
 
+## Watching v5 work, and taking the browser from it
+
+v5 opens a real Chromium and you watch it: every navigation, refusal and click
+arrives as an event, and every action captures a screenshot, streamed over the
+same SSE connection as the state. Nothing is reconstructed afterwards — what you
+see is the page as it was when the run made its decision about it.
+
+When a site wants a login, the run **stops and offers you the browser**. Clicking
+the screenshot clicks the page; there is a control bar for typing, Enter, Tab,
+scrolling and Back; and the run continues when you say you are done.
+
+### Why a handover cannot use `interrupt()`
+
+This is the one architectural idea worth reading the code for. v4's plan review
+uses `interrupt()`: LangGraph checkpoints the state, the run *stops*, and the
+answer can come days later. A browser handover cannot work that way, because
+`interrupt()` unwinds the node — and the node is holding a live Chromium with a
+half-finished login in it. Unwinding closes the very thing you were about to
+take over.
+
+```
+v4 review    →  interrupt()      →  run stops, state persists, no browser involved
+v5 handover  →  blocking queue   →  run continues, because the browser must
+```
+
+So the node stays running and blocks on a queue, executing what you send against
+the session it is still holding. Two consequences follow, both deliberate: it is
+**time-bounded**, because a blocked node holds one of very few browser slots;
+and the queue is **in-process**, because routing a click to a worker that does
+not hold the Chromium would accomplish nothing.
+
+### Booking
+
+Once a plan is approved, v5 offers to open real booking pages for it — with the
+destination, dates and traveller count already filled in. Commercial travel
+sites refuse automated browsers as a matter of course, and here that is the
+feature rather than the failure: the browser is already on the right search, so
+a refusal becomes the moment to hand it to you.
+
+**Automation stops at payment, always.** Card, UPI and net-banking details are
+not something this system types, under any configuration. A page asking for them
+ends the automated part rather than being driven through.
+
 ## Tech stack
 
 | Layer | Technology | Notes |
@@ -147,9 +208,10 @@ runs once across a pause-and-accept cycle.
 | Serving | Aegra 0.10 (Agent Protocol) | Native process, no Docker required |
 | Models | AWS Bedrock — Amazon Nova Pro / Lite / Micro | Tiered by agent role; Llama 3.3 70B as fallback |
 | Persistence | PostgreSQL 18 + pgvector | Aegra owns checkpoints, threads, runs, assistants |
-| Tools | MCP — Playwright, Filesystem, Fetch, `travel-mcp` | `travel-mcp` written for this project |
-| Frontend | Next.js 16, React 19, Tailwind 4 | SSE streaming, no CORS |
-| Testing | pytest — 447 tests | Plus a live suite that is opt-in |
+| Tools | MCP — Playwright, Fetch, Tavily, memory, time, `travel-mcp` | `travel-mcp` written for this project; 32 Indian cities, rail fares, GST slabs, festivals |
+| Frontend | Next.js 16, React 19, Tailwind 4 | SSE streaming, no CORS, print-to-PDF export |
+| Deployment | systemd, PostgreSQL, no Docker | One host, one exposed port |
+| Testing | pytest — 532 tests | Plus a live suite that is opt-in |
 
 ### Model tiering
 
@@ -187,7 +249,10 @@ brew install postgresql@18 pgvector      # macOS; apt equivalents on Linux
 # 4. Chromium for the v5 browser automation
 npx playwright install chromium
 
-# 5. Start Aegra — migrations run automatically
+# 5. Check the host can actually run it (read-only; spends nothing)
+./scripts/preflight.sh
+
+# 6. Start Aegra — migrations run automatically
 ./scripts/run_aegra.sh
 ```
 
@@ -269,7 +334,7 @@ properly: [AEGRA_DEPLOYMENT.md](docs/AEGRA_DEPLOYMENT.md).
 ## Testing
 
 ```bash
-uv run pytest -m "not live"     # 447 tests, no credentials, no network
+uv run pytest -m "not live"     # 532 tests, no credentials, no network
 uv run pytest -m live           # real Bedrock calls — costs money
 ```
 
@@ -282,16 +347,20 @@ succeeded because the escalation safety net caught it.
 ```
 ├── aegra.json                    5 graphs → 5 assistants; auth; custom routes
 ├── src/travel_planner/
-│   ├── core/                     state schema, Bedrock tiering, config, logging
+│   ├── core/                     state schema, Bedrock tiering, events, storage, money
 │   ├── agents/                   10 specialists — a constant across all versions
-│   ├── prompts/                  one system prompt per agent
-│   ├── tools/mcp/                MCP client, browser chain, research node
-│   ├── versions/                 v1…v5 — the topologies
+│   ├── prompts/                  one system prompt per agent, plus the India context
+│   ├── tools/mcp/                MCP client, browser chain, control, handover, booking
+│   ├── versions/                 v1…v5 — the topologies, and the gates between them
 │   ├── auth/                     Aegra auth + ownership handlers
-│   └── routes/                   /versions, /agents, /health/deep
-├── mcp-servers/travel-mcp/       standalone MCP server, 5 tools
-├── frontend/                     Next.js — planner + comparison
-├── scripts/                      postgres bootstrap, aegra runner, model resolver
+│   └── routes/                   /versions, /agents, /handover, /trips, /health/deep
+├── mcp-servers/travel-mcp/       standalone MCP server, 10 tools, Indian travel data
+├── frontend/src/
+│   ├── app/                      the planner, the comparison, the access gate, the proxy
+│   ├── components/               four views — setup, live, plan, history
+│   └── lib/                      Aegra client, the run hook, types
+├── deploy/systemd/               three units for a shared host
+├── scripts/                      preflight, postgres bootstrap, aegra runner, LAN serving
 ├── tests/                        unit + opt-in live suites
 └── docs/                         architecture, versions, deployment, models
 ```
@@ -302,17 +371,28 @@ succeeded because the escalation safety net caught it.
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit, and the decisions behind them |
 | [VERSIONS.md](docs/VERSIONS.md) | What each version adds and why |
-| [AEGRA_DEPLOYMENT.md](docs/AEGRA_DEPLOYMENT.md) | Native, no-Docker deployment runbook |
+| [INTRANET.md](docs/INTRANET.md) | Running it for a team: systemd units, capacity, the handover timeout, storage |
+| [AEGRA_DEPLOYMENT.md](docs/AEGRA_DEPLOYMENT.md) | Why Aegra runs natively rather than in a container |
 | [MODELS.md](docs/MODELS.md) | Tiering, structured-output resilience, cost |
 | [DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) | The plan this was built against |
 | [travel-mcp](mcp-servers/travel-mcp/README.md) | The custom MCP server |
 
 ## Safety boundary
 
-v5 drives a real browser to search real availability and prices, and reports
-what it finds. It never enters payment details and never clicks a final purchase
-button, under any configuration. That is a deliberate boundary, not an
-unimplemented feature.
+v5 drives a real browser, opens real booking pages, and hands them to you when a
+site needs a person. It **never enters payment details and never completes a
+purchase**, under any configuration — a page asking for a card, UPI or bank
+details ends the automated part rather than being driven through. That is a
+deliberate boundary, not an unimplemented feature.
+
+Two smaller ones follow from it:
+
+- **Typed text is never logged.** Someone taking over a login types into the
+  same browser the action log is describing, so the log records *"12 characters
+  into Password"* and never the characters.
+- **The action set is closed.** Instructions arrive over HTTP and aim at a live
+  browser, so anything outside a fixed list — or carrying an unexpected key — is
+  refused rather than reinterpreted.
 
 ## License
 

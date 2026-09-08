@@ -135,18 +135,23 @@ market, lower the hotel tier"*, the orchestrator re-ran exactly `attraction`,
 
 ```
 intake → destination → research → [ fan-out ] → … → review → section_gate
+       → finalize → remember → booking_gate ─book→ book → END
+                                            ─skip→ END
 ```
 
-One node is added to v4, and it changes what every other node sees. `research`
-drives four MCP servers and writes what it found into `research_notes`, which
-appears at the top of every specialist's prompt.
+`research` changes what every other node sees: it drives six MCP servers and
+writes what it found into `research_notes`, which appears at the top of every
+specialist's prompt. `booking_gate` and `book` are the only nodes in any version
+that act on the world rather than describing it.
 
 | Server | Provides |
 |---|---|
 | **Playwright** | Real destination guidance and hotel availability, browsed in a real Chromium |
-| **Fetch** | Structured HTTP where a browser is overkill |
-| **Filesystem** | Sandboxed read/write for artifacts and cached research |
-| **travel-mcp** | Climate, currency, visas, flight bands, destination catalogue |
+| **Fetch** | Structured HTTP where a browser is overkill — today's exchange rate, for one |
+| **Tavily** | Hosted search, over streamable HTTP |
+| **memory** | The traveller's knowledge graph: where they start from, how they book, where they have been |
+| **time** | The current time in Asia/Kolkata, so "next November" means something |
+| **travel-mcp** | 32 Indian cities with station and airport codes, rail fares, hotel GST slabs, festivals, seasons |
 
 **Why the specialists are not ReAct agents.** Giving each specialist the MCP
 tools reads better on a diagram but puts a browser-automation loop behind a
@@ -166,10 +171,30 @@ at startup. v5 exports `make_graph`, which Aegra invokes per request and refuses
 to cache. MCP sessions therefore belong to the run, and a caller can override
 which servers to use on a single run without a redeploy.
 
-**Measured:** 21.9s wall clock for 18.7s of agent time across 9 calls and 24,692
+**Watching it, and taking it over.** Every navigation, click and refusal emits
+an event and captures a screenshot, streamed on the same SSE connection as the
+state — so the browsing is something you watch rather than a black box that
+reports a conclusion. When a page needs a person, the run stops and offers you
+the browser; clicking the screenshot clicks the page.
+
+That handover cannot use `interrupt()`, and the reason is the sharpest design
+point in the project. `interrupt()` unwinds the node — correct for a plan
+review, where nothing is held open — but the node here is holding a live
+Chromium with a half-finished login in it, and unwinding closes exactly the
+thing you were about to take over. So the node stays running and blocks on a
+queue instead. It is time-bounded because a blocked node holds one of very few
+browser slots, and the queue is in-process because the browser is.
+
+**Booking stops at payment.** Once a plan is approved, v5 offers to open real
+booking pages with the dates and destination already filled in. Commercial sites
+refuse automated browsers routinely, and here that is the feature: the browser
+is already on the right search, so a refusal becomes the handover. Card, UPI and
+bank details are never entered, on any approval.
+
+**Measured:** 26.1s wall clock for 18.8s of agent time across 9 calls and 31,487
 tokens. The gap is the real browsing, which is not model time. In a typical run
-Wikivoyage answers the destination lookup and booking.com is detected as blocked,
-advancing the chain to Bing.
+Wikivoyage answers the destination lookup, the commercial aggregators refuse the
+automated visitor, and the chain reports which ones did.
 
 ---
 

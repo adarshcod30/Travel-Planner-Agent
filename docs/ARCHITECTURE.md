@@ -89,7 +89,7 @@ Nothing before the gate re-executes on resume — verified.
 
 This distinction is the one that cost the most to find.
 
-**Stateless servers** — travel-mcp, fetch, filesystem — go through
+**Stateless servers** — travel-mcp, fetch, Tavily, memory, time — go through
 `get_tools()`, which opens and closes a session per call. Every call is
 independent, and no subprocess is held open between uses.
 

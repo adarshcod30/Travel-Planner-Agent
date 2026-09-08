@@ -200,6 +200,16 @@ a refusal becomes the moment to hand it to you.
 not something this system types, under any configuration. A page asking for them
 ends the automated part rather than being driven through.
 
+### Headless does not get in
+
+The browser runs headed, and that is load-bearing rather than cosmetic.
+Headless Chromium is refused by `makemytrip.com` and `goibibo.com` with
+`net::ERR_HTTP2_PROTOCOL_ERROR` — the TLS handshake completes and the HTTP/2
+stream is then reset, on their home pages as much as their deep links, which is
+client fingerprinting rather than rate limiting. The same navigation headed
+loads both, and goibibo quotes real room rates. On a server with no display,
+`xvfb-run` supplies one; see [INTRANET.md](docs/INTRANET.md).
+
 ## Tech stack
 
 | Layer | Technology | Notes |

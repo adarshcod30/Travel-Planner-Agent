@@ -26,7 +26,7 @@ import contextlib
 import re
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from travel_planner.core import events
 from travel_planner.core.config import Settings, get_settings
@@ -156,24 +156,88 @@ def travel_targets(origin: str | None, city: str, when: date) -> list[tuple[str,
 #: is full of numbers and only the ones marked as currency are prices.
 _PRICE = re.compile(r"(?:₹|Rs\.?|INR)\s?([0-9][0-9,]{2,})")
 
+#: The role at the start of an accessibility-tree line, if it has one.
+_ROLE = re.compile(r"^\s*-\s+([a-z]+)")
+
+#: Roles that are controls for narrowing a search, not results of one. Every
+#: aggregator has a "Price per night" filter, and its options read exactly like
+#: prices — "₹0 to ₹1000" is a checkbox, not a hotel.
+_FILTER_ROLES = frozenset(
+    {"checkbox", "radio", "slider", "textbox", "searchbox", "combobox", "option", "spinbutton"}
+)
+
+#: Two amounts with a range separator between them. That is what a price
+#: filter looks like once its role has been stripped away — and unanchored,
+#: because aggregators render whole rows of them ("\u20b90-\u20b91500, \u20b91500-\u20b92500, ...").
+#:
+#: "Original price \u20b917,097. Current price \u20b95,813." survives this deliberately:
+#: there are words between the two amounts, so it is a discount rather than a
+#: range, and the second figure is what you would actually pay.
+_BARE_RANGE = re.compile(
+    "(?:\u20b9|Rs\\.?|INR)\\s?[0-9][0-9,]*\\s*(?:-|\u2013|to)\\s*(?:\u20b9|Rs\\.?|INR)?\\s?[0-9][0-9,]*"
+)
+
+#: Not a room rate: money coming off the price, or money added to it. Taken
+#: from a live goibibo listing, where the cheapest "price" on the page was a
+#: "+₹501 taxes & fees" line — which would have been reported as the cheapest
+#: hotel in Agra.
+_NOT_A_RATE = (
+    "off*",
+    " off",
+    "up to",
+    "save ",
+    "discount",
+    "cashback",
+    "coupon",
+    "offer",
+    "tax",
+    "fee",
+)
+
+#: An amount written as an addition ("+₹1,382") or an open-ended filter bound
+#: ("₹5500+") is describing something other than the price of a room.
+_ADDED = re.compile(r"\+\s*(?:₹|Rs\.?|INR)")
+_OPEN_RANGE = re.compile(r"(?:₹|Rs\.?|INR)\s?[0-9][0-9,]*\s*\+")
+
 
 def extract_prices(snapshot: str, limit: int = 12) -> list[dict[str, str]]:
-    """Lines from a listing page that carry a rupee price.
+    """Lines from a listing page that carry a real rupee price.
 
     Read off the accessibility tree rather than the rendered pixels, so this
     works on whatever the site actually served rather than on a guess about its
     markup.
+
+    Most of this function is about what *not* to believe. A live listing page
+    is covered in rupee figures that are not what a room costs — the price
+    filter's own options, a banner offering money off, a struck-through
+    "original price" — and reporting one of those as the cheapest hotel is a
+    plausible-looking lie about what a trip costs, which is worse than
+    returning nothing.
     """
     out: list[dict[str, str]] = []
     seen: set[str] = set()
     for raw in snapshot_body(snapshot).splitlines():
-        m = _PRICE.search(raw)
-        if not m:
+        amounts = _PRICE.findall(raw)
+        if not amounts:
             continue
-        amount = m.group(1).replace(",", "")
+
+        role_match = _ROLE.match(raw)
+        if role_match and role_match.group(1) in _FILTER_ROLES:
+            continue
+
+        text = re.sub(r"\[[^\]]*\]", "", raw).strip(' -:"').strip()
+        lowered = text.lower()
+        if any(word in lowered for word in _NOT_A_RATE):
+            continue
+        if _BARE_RANGE.search(text) or _OPEN_RANGE.search(text) or _ADDED.search(text):
+            continue
+
+        # Several amounts on one line is normally "was X, now Y" — the last one
+        # is what you would actually pay.
+        amount = amounts[-1].replace(",", "")
         if not amount.isdigit() or not (300 <= int(amount) <= 500000):
             continue  # phone numbers, pincodes, review counts
-        text = re.sub(r"\[[^\]]*\]", "", raw).strip(" -:").strip()
+
         key = f"{amount}:{text[:40]}"
         if key in seen:
             continue
@@ -223,8 +287,8 @@ async def open_booking(
             )
             page = await control.read_page(toolset)
         except Exception as exc:
-            attempts.append({"site": label, "outcome": f"{type(exc).__name__}"})
-            log.warning("booking_target_failed", site=label, error=type(exc).__name__)
+            attempts.append({"site": label, "outcome": _why_it_failed(exc)})
+            log.warning("booking_target_failed", site=label, error=str(exc)[:200])
             continue
 
         gate = page.get("needs_person")
@@ -252,7 +316,7 @@ async def open_booking(
             log.info("booking_prices_found", site=label, count=len(prices))
             return _report(label, url, page, attempts, handed_over=None, prices=prices)
 
-        attempts.append({"site": label, "outcome": "opened but showed no prices"})
+        attempts.append({"site": label, "outcome": _what_it_showed(url, page.get("url"))})
         if landed is None:
             landed = (label, url, page)
 
@@ -296,6 +360,57 @@ async def open_booking(
         "handed_over": None,
         "note": "No booking site could be opened at all.",
     }
+
+
+#: Chromium's own name for the failure, which is more informative than the
+#: exception type wrapping it — and worth keeping, because these three mean
+#: entirely different things to whoever reads the report.
+_NET_ERRORS = {
+    "ERR_HTTP2_PROTOCOL_ERROR": (
+        "refused the connection — it completes the TLS handshake and then resets the "
+        "HTTP/2 stream, which is how these sites turn away browsers they recognise as "
+        "automated. Running headed rather than headless gets past it"
+    ),
+    "ERR_CONNECTION_REFUSED": "refused the connection outright",
+    "ERR_NAME_NOT_RESOLVED": "could not be resolved — check DNS from this host",
+    "ERR_CONNECTION_TIMED_OUT": "did not answer in time",
+    "ERR_CERT": "presented a certificate this host would not accept",
+}
+
+
+def _why_it_failed(exc: Exception) -> str:
+    """Name what actually went wrong, not just the exception class.
+
+    "ControlError" tells a reader nothing. Whether a site reset the HTTP/2
+    stream, could not be resolved, or simply timed out are three different
+    problems with three different answers, and the browser already knows which
+    one it was.
+    """
+    text = str(exc)
+    for code, meaning in _NET_ERRORS.items():
+        if code in text:
+            return meaning
+    return f"{type(exc).__name__}: {text[:120]}"
+
+
+def _what_it_showed(asked: str, landed: str | None) -> str:
+    """A site that loaded but gave us something other than what we asked for.
+
+    Two aggregators do this rather than refusing: the query string is dropped,
+    or the deep link bounces to the home page. Reporting that as "showed no
+    prices" hides the actual cause, which is that the search never happened.
+    """
+    if not landed:
+        return "opened but showed no prices"
+    if _path_of(landed) != _path_of(asked):
+        return "redirected away from the search, so no results were shown"
+    if "?" in asked and "?" not in landed:
+        return "dropped the search terms from the URL, so it showed an empty search"
+    return "opened the right page but quoted no prices to an automated browser"
+
+
+def _path_of(url: str) -> str:
+    return urlsplit(url).path.rstrip("/").lower()
 
 
 async def _hand_over(

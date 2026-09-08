@@ -102,7 +102,20 @@ class Settings(BaseSettings):
     booking_enabled: bool = True
 
     playwright_mcp_url: str = "http://localhost:8931/mcp"
-    playwright_mcp_headless: bool = True
+
+    # Headed, and not only because v5 is meant to be watched.
+    #
+    # Measured against the real sites: headless Chromium gets
+    # net::ERR_HTTP2_PROTOCOL_ERROR from makemytrip.com and goibibo.com — on
+    # their home pages, not just deep links. The server completes the TLS
+    # handshake and then resets the HTTP/2 stream, which is fingerprinting the
+    # client rather than rate-limiting it. The identical navigation in headed
+    # mode loads both. So this is the difference between the two Indian
+    # aggregators working and not working at all.
+    #
+    # On a server with no display, run it under `xvfb-run` — headed Chromium
+    # needs a display, not a monitor.
+    playwright_mcp_headless: bool = False
     playwright_mcp_command: str = "npx"
     playwright_mcp_args: str = "-y @playwright/mcp@latest --isolated"
 

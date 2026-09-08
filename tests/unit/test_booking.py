@@ -298,3 +298,111 @@ async def test_every_site_failing_is_a_report_not_an_exception():
     out = await booking.open_booking(FakeBrowser(["nothing"]), thread_id="t", targets=[])
     assert out["ok"] is False and out["site"] is None
     assert "No booking site could be opened" in out["note"]
+
+
+# --- what a listing page is lying about -----------------------------------------
+
+REAL_PAGE = """### Snapshot
+```yaml
+- checkbox "₹0 to ₹1000" [ref=e1]
+- generic [ref=e2]: ₹0 to ₹1000
+- paragraph [ref=e3]: ₹0-₹1500, ₹1500-₹2500,...
+- paragraph [ref=e4]: Grab Up to ₹25,000 OFF* on Flights & Hotels.
+- generic [ref=e5]: ₹ 500 - ₹ 7,000+
+- group "Original price ₹ 17,097. Current price ₹ 5,813." [ref=e6]
+- listitem [ref=e7]: Hotel Pearl Palace ₹1,850 per night
+```
+"""
+
+
+def test_a_price_filter_is_not_a_hotel_price():
+    """Every aggregator has a "price per night" filter and its options read
+    exactly like prices. Reporting one as the cheapest hotel is a
+    plausible-looking lie about what a trip costs — worse than finding nothing.
+    Taken from a live goibibo listing page."""
+    lines = [p["line"] for p in booking.extract_prices(REAL_PAGE)]
+    assert not any("to ₹1000" in x for x in lines)
+    assert not any("₹0-₹1500" in x for x in lines)
+    assert not any("500 - ₹ 7,000" in x for x in lines)
+
+
+def test_a_discount_banner_is_not_a_hotel_price():
+    assert not any("25,000" in p["price_inr"] for p in booking.extract_prices(REAL_PAGE))
+
+
+def test_a_discounted_room_reports_what_you_would_pay():
+    """ "Original price ₹17,097. Current price ₹5,813." is two amounts but not a
+    range — the second is the one you are charged."""
+    prices = {p["price_inr"] for p in booking.extract_prices(REAL_PAGE)}
+    assert "5813" in prices and "17097" not in prices
+
+
+def test_the_real_listing_survives_all_of_that():
+    assert "1850" in {p["price_inr"] for p in booking.extract_prices(REAL_PAGE)}
+
+
+def test_an_en_dash_range_is_a_range_too():
+    # \u2013 is an en dash: sites write it as often as a hyphen.
+    assert booking.extract_prices("- generic: \u20b9 500 \u2013 \u20b9 7,000") == []
+
+
+# --- naming the failure ---------------------------------------------------------
+
+
+def test_an_http2_reset_is_named_as_the_refusal_it_is():
+    """Measured against the live sites: makemytrip and goibibo complete the TLS
+    handshake and then reset the HTTP/2 stream, on their home pages as well as
+    deep links. Headed Chromium loads both, so it is client fingerprinting."""
+    why = booking._why_it_failed(RuntimeError("net::ERR_HTTP2_PROTOCOL_ERROR at https://x"))
+    assert "resets the HTTP/2 stream" in why
+    assert "headed rather than headless" in why
+
+
+def test_dns_and_timeouts_are_told_apart():
+    assert "DNS" in booking._why_it_failed(RuntimeError("net::ERR_NAME_NOT_RESOLVED"))
+    assert "in time" in booking._why_it_failed(RuntimeError("net::ERR_CONNECTION_TIMED_OUT"))
+
+
+def test_an_unrecognised_failure_still_says_something_useful():
+    assert "ValueError" in booking._why_it_failed(ValueError("something odd"))
+
+
+def test_a_redirect_away_from_the_search_is_not_no_prices():
+    """agoda bounces a deep link to its home page. Calling that "showed no
+    prices" hides the cause, which is that the search never happened."""
+    out = booking._what_it_showed("https://agoda.com/search?city=Agra", "https://agoda.com/en-gb/")
+    assert "redirected away" in out
+
+
+def test_a_dropped_query_string_is_named():
+    out = booking._what_it_showed(
+        "https://booking.com/searchresults.html?ss=Agra", "https://booking.com/searchresults.html"
+    )
+    assert "dropped the search terms" in out
+
+
+def test_the_right_page_with_no_prices_says_exactly_that():
+    same = "https://goibibo.com/hotels/hotels-in-agra-ct/"
+    assert "quoted no prices" in booking._what_it_showed(same, same)
+
+
+@pytest.mark.parametrize(
+    "line,what",
+    [
+        ("- generic : ₹5500+", "an open-ended filter bound"),
+        ("- generic : Bank offer | ₹646 off", "a bank discount"),
+        ("- paragraph : +₹1,382 taxes &fees", "taxes added to a rate"),
+        ("- paragraph : +₹501 taxes &fees", "the line that became a headline"),
+    ],
+)
+def test_money_that_is_not_a_room_rate_is_ignored(line, what):
+    """All four taken from one live goibibo listing page. The last one is the
+    reason this exists: at Rs 501 it was the cheapest figure on the page, so
+    the booking panel reported "from about Rs 501" — a tax line presented as
+    the cheapest hotel in Agra."""
+    assert booking.extract_prices(line) == [], what
+
+
+@pytest.mark.parametrize("line", ["- paragraph : ₹9,200", "- paragraph : ₹3,310"])
+def test_a_plain_room_rate_still_gets_through(line):
+    assert len(booking.extract_prices(line)) == 1

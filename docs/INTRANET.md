@@ -106,6 +106,32 @@ right default for a team planning trips together and the wrong one for a
 hundred strangers — if you need the latter, key the memory file by user before
 you widen access.
 
+## Headless will not work
+
+The browser runs **headed**, and this is not a preference.
+
+Measured against the live sites: headless Chromium gets
+`net::ERR_HTTP2_PROTOCOL_ERROR` from `makemytrip.com` and `goibibo.com` — on
+their home pages, not only on deep links. The server completes the TLS
+handshake and then resets the HTTP/2 stream, which is fingerprinting the client
+rather than rate-limiting it. The identical navigation headed loads both, and
+goibibo then quotes real room rates.
+
+On a host with no display, run it under a virtual one — headed Chromium needs a
+display, not a monitor:
+
+```bash
+sudo apt install xvfb
+```
+
+```ini
+# in travel-planner-aegra.service, for MCP_MODE=stdio
+ExecStart=/usr/bin/xvfb-run -a /usr/bin/env bash /opt/travel-planner/scripts/run_aegra.sh
+```
+
+Nobody watches that display. Whoever is using the planner sees the screenshot
+stream in the web UI, which is the same either way.
+
 ## Capacity
 
 The limit that matters is not requests, it is browsers. A live Chromium costs

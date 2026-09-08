@@ -147,10 +147,10 @@ Travel-Planner-Agent/
 └── scripts/measure_versions.py       # cross-version latency / cost runs
 ```
 
-The two earlier prototypes stay on disk under `_reference/`, gitignored. They are
-porting material, not part of the public project — the evolution story is told by
-v1 through v5, and shipping half-finished prior art alongside it would only dilute
-that.
+Two earlier prototypes were kept on disk as porting material while this was
+being built. They were never committed, and they have since been deleted: the
+evolution story is told by v1 through v5, and prior art was only ever a source
+to port from, never something to ship alongside.
 
 ---
 

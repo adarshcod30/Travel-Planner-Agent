@@ -1,6 +1,3 @@
-# ---- Local-only prototype reference (never committed) ----
-_reference/
-
 # ---- Secrets: never commit ----
 .env
 .env.*

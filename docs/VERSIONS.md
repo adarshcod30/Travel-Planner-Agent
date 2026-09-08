@@ -24,7 +24,7 @@ It is also deliberately naive: the itinerary agent runs with no attractions, no
 hotels and no weather to draw on, and has to invent them. **v2 exists to fix
 exactly that.**
 
-**Measured:** 4.1s of agent work in 6.0s of wall clock — one call, 1,993 tokens.
+**Measured:** 2.5s of agent work in 4.0s of wall clock — one call, 1,860 tokens.
 It produces no budget figure at all, only a range and a list of what to verify
 before booking, which is the honest output for a model working from recall.
 
@@ -50,8 +50,11 @@ target fire it once per source *superstep*, so with uneven branch depths the
 itinerary agent runs more than once per request. That was verified empirically
 before the join was written, and a topology test pins it.
 
-**Measured:** 14.8s of agent work in 14.0s of wall clock across 6 calls and 14,445
-tokens — the fan-out running four specialists in the time of the slowest.
+**Measured:** 12.2s of agent work in 12.1s of wall clock across 6 calls and 14,481
+tokens. The fan-out itself: attractions, budget, customs and weather spend 5.9s of
+model time between them and 2.1s of wall clock. The 3.8s saved is close to what
+Aegra's per-node checkpointing costs at this size, which is why the two totals
+come out level — the topology is a structural win before it is a visible one.
 
 ---
 
@@ -79,9 +82,11 @@ The loop is bounded. Past the ceiling the orchestrator short-circuits to an
 empty decision **without calling the model at all**, so a reviewer that never
 approves cannot spin.
 
-**Measured:** 57.8s of agent work in 56.1s of wall clock across 24 calls and 69,260
-tokens. The reviewer rejected the draft twice, and the orchestrator had to infer
-from prose what v4 is simply told — which is the whole cost of the difference.
+**Measured (median of three):** 33.0s of agent work in 32.1s of wall clock across
+14 calls and 39,534 tokens. The spread between runs is the point: the count moves
+because the orchestrator reads the reviewer's prose and decides how much to redo.
+A harsh review costs more calls. v4 is told instead of inferring, which is the
+whole cost of the difference.
 
 ---
 
@@ -131,13 +136,27 @@ silent failures:
   must not use `from __future__ import annotations`, which turns annotations
   into strings and makes `TypedDict` silently mark every key required.
 
-**Measured:** 17.2s of agent work in 16.1s of wall clock across 9 calls and 23,457
-tokens — nine where v3 spent twenty-four, for the same request.
+**Measured:** 19.4s of agent work in 22.1s of wall clock across 9 calls and 24,191
+tokens — nine where v3 spent fourteen, for the same request, and nine again on the
+next run. The count is fixed because the routing is a dictionary lookup, not a
+judgement.
 
-Older note: paused at 11.8s; a revision round took 15.0s; 15 agent calls
-across the whole conversation. Asked for *"fewer temples on day 2, add a food
-market, lower the hotel tier"*, the orchestrator re-ran exactly `attraction`,
-`hotel`, `budget` and `itinerary`.
+**A revision round, measured.** The draft paused at 20.0s offering 10 sections,
+8 of them commentable. Two comments — *"lower the tier"* on hotels, *"fewer
+temples on day 2, add a food market"* on attractions — re-ran exactly four
+nodes in 12.0s: `attraction` and `hotel` because they were named, then
+`itinerary` and `review` because an itinerary that cites a hotel is stale the
+moment the hotel changes, and a review that audited the old draft no longer
+describes the new one.
+
+**Zero orchestrator calls.** That is the entire difference from v3, in one
+number. The "what else is now invalid" reasoning lives in a `DEPENDS_ON` table
+rather than in a model that has to reconstruct it from prose on every round.
+
+The run then pauses again, showing the revised plan for another look; accepting
+finalises in 2.0s. Thirteen agent calls across the whole conversation, and the
+history records both rounds — the comments and which specialists they moved,
+then the acceptance — so a finished plan can account for itself.
 
 ---
 
@@ -201,8 +220,9 @@ refuse automated browsers routinely, and here that is the feature: the browser
 is already on the right search, so a refusal becomes the handover. Card, UPI and
 bank details are never entered, on any approval.
 
-**Measured:** 28.2s wall clock for 19.4s of agent time across 9 calls and 31,522
-tokens. The gap is the real browsing, which is not model time. In a typical run
+**Measured:** 26.2s wall clock for 17.7s of agent time across 9 calls and 31,131
+tokens. The 8.5s gap is the real browsing, which is not model time — three times
+the wall-versus-agent gap of any other version. In a typical run
 Wikivoyage answers the destination lookup, the commercial aggregators refuse the
 automated visitor, and the chain reports which ones did.
 
@@ -210,14 +230,22 @@ automated visitor, and the chain reports which ones did.
 
 ## What each version costs
 
-| | v1 | v2 | v3 | v5 |
-|---|---|---|---|---|
-| Wall clock | 7.1s | 8.8s | 11.9s | 21.9s |
-| Agent calls | 2 | 6 | 9 | 9 |
-| Tokens | 2,656 | 8,921 | 14,376 | 24,692 |
-| Grounded in real data | no | no | no | **yes** |
-| Survives a human walking away | no | no | no | **yes** (v4 too) |
+Median of three runs each, same brief, measured at the HTTP boundary by
+`scripts/measure_versions.py`:
 
-The honest summary: v2 buys real research for almost no wall clock. v3 buys
-self-correction for ~3s. v4 buys human control for whatever the human costs. v5
-buys ground truth for roughly 1.7x the tokens and double the wall clock.
+| | v1 | v2 | v3 | v4 | v5 |
+|---|---|---|---|---|---|
+| Wall clock | 4.0s | 12.1s | 32.1s | 22.1s | 26.2s |
+| Agent time | 2.5s | 12.2s | 33.0s | 19.4s | 17.7s |
+| Agent calls | 1 | 6 | 14 | 9 | 9 |
+| Tokens | 1,860 | 14,481 | 39,534 | 24,191 | 31,131 |
+| Cost predictable per run | yes | yes | **no** | yes | yes |
+| Grounded in real data | no | no | no | no | **yes** |
+| Survives a human walking away | no | no | no | **yes** | **yes** |
+
+The honest summary: v2 buys real research for about 8x the tokens and 8s of wall
+clock. v3 buys self-correction, and pays for it twice — 2.7x v2's tokens, and a
+bill that changes between identical requests. v4 buys back both the tokens and
+the predictability by asking you instead of guessing. v5 buys ground truth for
+roughly 1.3x v4's tokens and 4s more wall clock, most of it spent waiting on
+other people's websites.

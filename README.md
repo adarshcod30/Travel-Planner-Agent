@@ -39,32 +39,48 @@ Every version is cumulative: **v5 is v1 with four more ideas in it.**
 ### Measured, not claimed
 
 One request — *"forts and street food, reachable by train"*, from Delhi, 3 days,
-2 travellers — through all five, against Amazon Nova on Bedrock:
+2 travellers — through all five, against Amazon Nova on Bedrock. Median of three
+runs each, measured at the HTTP boundary, so the wall clock includes Aegra's
+checkpoint writes rather than just model time:
 
 | Version | Wall clock | Agent time | Calls | Tokens | Budget produced |
 |---|---|---|---|---|---|
-| v1 | 6.0s | 4.1s | 1 | 1,993 | a range, not a figure |
-| v2 | 14.0s | 14.8s | 6 | 14,445 | ₹36,200 |
-| v3 | 56.1s | 57.8s | 24 | 69,260 | ₹31,940 |
-| v4 | 16.1s | 17.2s | 9 | 23,457 | ₹29,140 |
-| v5 | 28.2s | 19.4s | 9 | 31,522 | ₹30,500 |
+| v1 | 4.0s | 2.5s | 1 | 1,860 | a range, not a figure |
+| v2 | 12.1s | 12.2s | 6 | 14,481 | ₹30,200 |
+| v3 | 32.1s | 33.0s | 14 | 39,534 | ₹37,900 |
+| v4 | 22.1s | 19.4s | 9 | 24,191 | ₹39,500 |
+| v5 | 26.2s | 17.7s | 9 | 31,131 | ₹29,000 |
 
-Three things in that table are the whole argument:
+Reproduce it against your own account — same brief, same method:
 
-**v2 spends more agent-seconds than wall-clock seconds.** That gap is the
-fan-out doing its job — four specialists in the time of the slowest one.
+```bash
+uv run scripts/measure_versions.py --repeat 3
+```
 
-**v3 cost 24 calls where v4 cost 9**, for the same request. Its reviewer
-rejected the draft twice and its orchestrator inferred what to re-run from
-prose. v4 doesn't have to infer: you point at a section, and the specialist
-behind it is a dictionary lookup.
+Four things in that table are the whole argument:
 
-**v5 inverts the ratio the other way** — 28.2s wall against 19.4s of agent time,
-because real browsing is not model time.
+**v1 produces no budget at all.** It has no research, so it gives a cost range
+and states what to verify before booking — the honest output for a model working
+from recall. Every later version returns a figure because something actually
+looked the numbers up.
 
-v1 produces no budget at all. It has no research, so it gives a cost range and
-states what to verify before booking — the honest output for a model working
-from recall.
+**The fan-out is real, and small.** In v2 the four parallel specialists —
+attractions, budget, customs, weather — spend 5.9s of model time between them
+and 2.1s of wall clock. That 3.8s is what the topology buys. It is also why v2's
+agent time and wall clock come out nearly equal: the fan-out gives back roughly
+what Aegra's per-node checkpointing costs at this size. Parallelism here is a
+structural win that only becomes a *visible* win as the specialists get slower.
+
+**v3 costs 14 calls where v4 costs 9** — and more to the point, v3's number
+moves between runs while v4's does not. v3's orchestrator reads the reviewer's
+prose and decides what to redo, so a harsher review costs more calls. v4 doesn't
+decide: you point at a section, and the specialist behind it is a dictionary
+lookup. Same correction, bounded cost.
+
+**v5's wall clock runs 8.5s ahead of its agent time** — 26.2s against 17.7s,
+three times the gap of any other version. Every version pays some gap to
+checkpointing; v5's is mostly page loads, refusals and a live Chromium reading a
+hotel listing. It is the one version where the slow part isn't the model.
 
 ---
 
@@ -115,9 +131,10 @@ The one Aegra detail worth understanding, because v5 depends on it:
 # v1–v4: compiled once, cached by Aegra, reused for every request.
 graph = build().compile(name=VERSION)
 
+
 # v5: a factory. Aegra refuses to cache these and re-invokes per request.
 async def make_graph(config: RunnableConfig | None = None):
-    settings = settings_for_run(config)     # per-request overrides
+    settings = settings_for_run(config)  # per-request overrides
     return build(settings=settings).compile(name=VERSION)
 ```
 
@@ -221,12 +238,12 @@ data contract per version.
 
 ```python
 class TripState(TypedDict):
-    messages:    NotRequired[Annotated[list[BaseMessage], add_messages]]
+    messages: NotRequired[Annotated[list[BaseMessage], add_messages]]
     destination: NotRequired[DestinationChoice | None]
-    budget:      NotRequired[BudgetBreakdown | None]
-    review:      NotRequired[Review | None]
-    revisions:   NotRequired[list[Revision] | None]
-    agent_runs:  NotRequired[Annotated[list[AgentRun], operator.add]]
+    budget: NotRequired[BudgetBreakdown | None]
+    review: NotRequired[Review | None]
+    revisions: NotRequired[list[Revision] | None]
+    agent_runs: NotRequired[Annotated[list[AgentRun], operator.add]]
     ...
 ```
 
@@ -255,12 +272,15 @@ def rerun_aware(agent: BaseAgent):
     def node(state: TripState) -> dict[str, Any]:
         decision = state.get("orchestrator_decision")
         if decision is None:
-            return agent(state)                    # first pass: everyone runs
+            return agent(state)  # first pass: everyone runs
         targets = set(decision.agents_to_rerun)
-        wanted = ("destination" in targets          # a new destination invalidates all
-                  or agent.name in targets
-                  or any(d in targets for d in DEPENDS_ON.get(agent.name, ())))
-        return agent(state) if wanted else {}       # skipped nodes still "complete"
+        wanted = (
+            "destination" in targets  # a new destination invalidates all
+            or agent.name in targets
+            or any(d in targets for d in DEPENDS_ON.get(agent.name, ()))
+        )
+        return agent(state) if wanted else {}  # skipped nodes still "complete"
+
     return node
 ```
 
@@ -297,10 +317,10 @@ shared, so it's implemented and tuned once.
 
 ```python
 class WeatherAgent(BaseAgent):
-    name       = "weather"
-    tier       = "low"
-    schema     = WeatherReport
-    state_key  = "weather"
+    name = "weather"
+    tier = "low"
+    schema = WeatherReport
+    state_key = "weather"
     system_prompt = WEATHER_PROMPT
 
     def user_prompt(self, state: TripState) -> str: ...
@@ -335,12 +355,13 @@ Two schema-level lessons are baked in, both from live failures:
 class BudgetBreakdown(BaseModel):
     hotel: float = Field(ge=0)
     ...
-    currency: Literal["INR"] = "INR"      # a Literal, not a default — see below
+    currency: Literal["INR"] = "INR"  # a Literal, not a default — see below
 
     @model_validator(mode="after")
     def _recompute_total(self):
-        computed = round(self.hotel + self.food + self.transport
-                         + self.activities + self.miscellaneous, 2)
+        computed = round(
+            self.hotel + self.food + self.transport + self.activities + self.miscellaneous, 2
+        )
         if computed <= 0:
             raise ValueError("the budget is empty — every category is zero…")
         object.__setattr__(self, "total", computed)
@@ -585,18 +606,34 @@ up. Runs past the cap queue for a slot rather than launching another Chrome.
 ## Testing
 
 ```bash
-uv run pytest -m "not live"     # 581 tests, no credentials, no network
-uv run pytest -m live           # 12 opt-in suites; spends real Bedrock calls
+uv run pytest -m "not live"     # 617 tests, no credentials, no network
+uv run pytest -m live           # 19 opt-in tests; spends real Bedrock calls
+uv run ruff check . && uv run ruff format --check .
 ```
 
 The unit suite runs with every model call scripted, so a graph's topology,
 routing and state handling are tested without a network. The live suite is
-opt-in and is what produced the numbers above.
+opt-in: it puts every agent's schema in front of the real Nova tier it is
+assigned to, which is the one thing a mock cannot tell you. The table at the top
+of this file comes from `scripts/measure_versions.py`, not from either suite.
 
-Three of them are tests of the **repository** rather than the product, because
-each has already gone wrong once: a tooling directory reaching a commit, a
-credential-bearing file one careless `git add` away, and Next 16 quietly writing
-an assistant file into the tree on every `npm run dev`.
+Ten of them are tests of the **repository** rather than the product, because
+each thing they check has already gone wrong once: a tooling directory reaching
+a commit, a credential-bearing file one careless `git add` away, Next 16
+quietly writing an instruction file into the tree on every `npm run dev`, and
+157 screenshots of live browsing sessions riding along in ten commits before
+anything noticed.
+
+They check *shape* rather than names — "the only markdown at the root is the
+README", not a list of the files today's tools generate — and they ask
+`git check-ignore` rather than searching `.gitignore` for a substring, so what
+is tested is the rule's effect.
+
+One thing to know before editing this file: `ruff format` reaches into
+Python fenced blocks in Markdown, so every snippet in the docs has to be real,
+parseable, canonically-formatted Python. That is a feature — a code
+example that no longer parses fails CI instead of quietly rotting — but it does
+mean hand-aligned `=` signs get collapsed.
 
 ---
 
@@ -619,7 +656,8 @@ an assistant file into the tree on every `npm run dev`.
 │   ├── components/               four views + the browser stage and review panel
 │   └── lib/                      Aegra client, the run hook, types
 ├── deploy/systemd/               three units for a shared host
-├── scripts/                      preflight, postgres bootstrap, aegra runner, LAN serving
+├── scripts/                      preflight, postgres bootstrap, aegra runner, LAN serving,
+│                                 measure_versions.py (the table at the top)
 ├── tests/                        unit + opt-in live suites
 └── docs/                         architecture, versions, deployment, models, intranet
 ```

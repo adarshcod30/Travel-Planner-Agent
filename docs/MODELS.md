@@ -103,19 +103,25 @@ uv run pytest -m live tests/live/test_bedrock_conformance.py -q -s
 
 ## Cost shape
 
-From the measured runs:
+Median of three runs each, one brief, from `scripts/measure_versions.py`:
 
-| Version | Tokens | Notes |
-|---|---|---|
-| v1 | 2,656 | 2 agents |
-| v2 | 8,921 | 6 agents |
-| v3 | 14,376 | 9 agents incl. audit |
-| v5 | 24,692 | 9 agents + research notes in every prompt |
+| Version | Calls | Tokens | Notes |
+|---|---|---|---|
+| v1 | 1 | 1,860 | one call, no research |
+| v2 | 6 | 14,481 | fan-out: 4 specialists + itinerary |
+| v3 | 14 | 39,534 | adds audit and a re-run loop — count varies per run |
+| v4 | 9 | 24,191 | same specialists, routed by you instead of a model |
+| v5 | 9 | 31,131 | 9 agents + research notes in every prompt |
 
-v5 adds roughly 70% to v3's tokens, and the reason is structural rather than
-incidental: the research notes are prepended to **every** specialist's prompt.
-Grounding is not free, and `NOTE_EXCERPT_CHARS` in `research.py` is the dial —
-each character is paid for once per downstream agent.
+**Read v5 against v4, not against v3.** Both make exactly 9 calls, so the 29%
+token difference between them is purely the grounding: research notes are
+prepended to **every** specialist's prompt. That is the honest price of real
+data, and `NOTE_EXCERPT_CHARS` in `research.py` is the dial — each character is
+paid for once per downstream agent.
+
+v3 costs *more* than v5 despite having no research at all, because its re-run
+loop is model-decided. Self-correction by inference is the most expensive thing
+in this table.
 
 ## Changing models
 

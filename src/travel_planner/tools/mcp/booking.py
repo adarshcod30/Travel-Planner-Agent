@@ -203,6 +203,11 @@ async def open_booking(
     """
     settings = settings or get_settings()
     attempts: list[dict[str, str]] = []
+    #: The best page that actually rendered. A site can load perfectly and
+    #: still show no prices — its search form, with the city and dates already
+    #: filled in, is one click from real results. That page is worth handing to
+    #: a person, and it is the common case rather than the exception.
+    landed: tuple[str, dict[str, Any]] | None = None
 
     for label, url in targets:
         events.phase("booking", f"opening {label}")
@@ -242,6 +247,27 @@ async def open_booking(
             return _report(label, url, page, attempts, handed_over=None, prices=prices)
 
         attempts.append({"site": label, "outcome": "opened but showed no prices"})
+        if landed is None:
+            landed = (label, page)
+
+    # Nothing quoted a price, but something loaded. Rather than reporting a
+    # dead end, put the person in front of it — the search is already set up,
+    # and finishing it is a click they can make and the automation cannot.
+    if landed is not None:
+        label, page = landed
+        events.phase("booking", f"{label} loaded but quoted nothing — offering you the browser")
+        outcome = await _hand_over(toolset, thread_id, "assist", page, settings)
+        if outcome == "released":
+            page = await control.read_page(toolset)
+            return _report(
+                label,
+                page.get("url") or "",
+                page,
+                attempts,
+                handed_over=outcome,
+                prices=extract_prices(page.get("snapshot", "")),
+            )
+        return _report(label, page.get("url") or "", page, attempts, handed_over=outcome, prices=[])
 
     log.warning("booking_no_site_answered", tried=[a["site"] for a in attempts])
     return {
@@ -251,7 +277,7 @@ async def open_booking(
         "prices": [],
         "attempts": attempts,
         "handed_over": None,
-        "note": "No booking site would show live prices to an automated browser.",
+        "note": "No booking site could be opened at all.",
     }
 
 
@@ -293,11 +319,16 @@ def _report(
 
 
 def _note(site: str, prices: list[dict[str, str]], handed_over: str | None) -> str:
-    if handed_over == "expired":
-        return f"{site} needed a person and nobody came, so the browser was closed."
+    if prices and handed_over == "released":
+        cheapest = min(int(p["price_inr"]) for p in prices)
+        return (
+            f"You finished the search on {site}: {len(prices)} prices, from about Rs {cheapest:,}."
+        )
     if prices:
         cheapest = min(int(p["price_inr"]) for p in prices)
         return f"{site} is showing {len(prices)} live prices, from about Rs {cheapest:,}."
+    if handed_over == "expired":
+        return f"{site} was open and waiting for you, but nobody took it before it timed out."
     if handed_over == "released":
         return f"You took over on {site}; the browser is where you left it."
     return f"{site} opened but showed no prices to an automated browser."

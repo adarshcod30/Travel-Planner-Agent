@@ -6,7 +6,15 @@
  * and there is no CORS configuration to keep in sync between two deployments.
  */
 
-import type { ThreadState, TripRequest, TripState, VersionMeta } from "./types";
+import type {
+  ArchivedTrip,
+  BrowserAction,
+  HandoverState,
+  ThreadState,
+  TripRequest,
+  TripState,
+  VersionMeta,
+} from "./types";
 
 const API = "/api/aegra";
 
@@ -55,7 +63,14 @@ export async function* streamRun(
   const res = await fetch(`${API}/threads/${threadId}/runs/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ assistant_id: assistantId, stream_mode: ["values"], ...body }),
+    // `custom` carries the run's own events — agents lighting up, browser
+    // actions, screenshots — which is the only way anything mid-node reaches a
+    // client: a state update does not arrive until the node returns.
+    body: JSON.stringify({
+      assistant_id: assistantId,
+      stream_mode: ["values", "custom"],
+      ...body,
+    }),
     signal,
   });
 
@@ -97,4 +112,82 @@ export async function* streamRun(
 /** The final state after a stream finishes, read back authoritatively. */
 export async function finalState(threadId: string): Promise<TripState> {
   return (await getThreadState(threadId)).values;
+}
+
+// ---------------------------------------------------------------------------
+// Driving a live browser
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the browser is right now.
+ *
+ * Deliberately does not touch the browser: the run refreshes this after every
+ * action and on a timer, and a second reader taking its own snapshot would
+ * fight the node for the session.
+ */
+export async function getHandover(threadId: string): Promise<HandoverState | null> {
+  const res = await fetch(`${API}/handover/${threadId}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+export async function sendAction(
+  threadId: string,
+  action: BrowserAction,
+): Promise<{ ok: boolean; error?: string; page?: unknown }> {
+  const res = await fetch(`${API}/handover/${threadId}/action`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(action),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/** Give the browser back. The run continues from where it was blocked. */
+export async function releaseBrowser(threadId: string): Promise<void> {
+  await fetch(`${API}/handover/${threadId}/release`, { method: "POST" });
+}
+
+// ---------------------------------------------------------------------------
+// Finished trips
+// ---------------------------------------------------------------------------
+
+export function listTrips(limit = 50): Promise<{ trips: ArchivedTrip[]; count: number }> {
+  return jsonFetch(`/trips?limit=${limit}`);
+}
+
+export function getTrip(tripId: string): Promise<ArchivedTrip> {
+  return jsonFetch(`/trips/${tripId}`);
+}
+
+export async function forgetTrip(tripId: string): Promise<void> {
+  await fetch(`${API}/trips/${tripId}`, { method: "DELETE" });
+}
+
+/**
+ * Archive the plan and delete everything that produced it.
+ *
+ * The asymmetry is the point: the plan is a few kilobytes and is what the
+ * traveller came for, while the checkpoints behind it are ~110 KB per run and
+ * will never be replayed once the trip is finished.
+ */
+export function completeTrip(
+  threadId: string,
+  graphId: string,
+  state: TripState,
+): Promise<{ archived: boolean; purged: boolean }> {
+  return jsonFetch("/trips/complete", {
+    method: "POST",
+    body: JSON.stringify({ thread_id: threadId, graph_id: graphId, state }),
+  });
+}
+
+/** The frame URL for a path carried on a browser_frame event. */
+export function frameUrl(path: string): string {
+  return `${API}/runs/${path.split("/")[0]}/frames/${path.split("/").slice(1).join("/")}`;
 }

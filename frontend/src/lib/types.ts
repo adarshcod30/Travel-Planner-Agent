@@ -112,6 +112,8 @@ export interface TripState {
   section_comments?: SectionComment[] | null;
   revisions?: Revision[] | null;
   research_notes?: string[] | null;
+  wants_booking?: boolean | null;
+  booking?: BookingSearch | null;
   final_plan?: string | null;
   agent_runs?: AgentRun[];
   errors?: AgentError[];
@@ -169,7 +171,7 @@ export interface PlanReviewInterrupt {
 export interface ThreadState {
   values: TripState;
   next: string[];
-  tasks?: { interrupts?: { value: PlanReviewInterrupt }[] }[];
+  tasks?: { interrupts?: { value: RunInterrupt }[] }[];
 }
 
 export interface TripRequest {
@@ -186,3 +188,157 @@ export interface TripRequest {
 
 /** What the planner page tracks while a run is in flight. */
 export type RunPhase = "idle" | "running" | "interrupted" | "done" | "error";
+
+// ---------------------------------------------------------------------------
+// Live events (v5)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a run pushes out while it is still running.
+ *
+ * A node's state update only reaches the client when the node returns, which
+ * is fine for an agent that thinks for five seconds and useless for a browser
+ * that works for ninety. These arrive over the same SSE connection under
+ * `stream_mode: ["values", "custom"]`.
+ */
+export type RunEventKind =
+  | "agent_started"
+  | "agent_finished"
+  | "agent_failed"
+  | "browser_action"
+  | "browser_frame"
+  | "browser_blocked"
+  | "needs_human"
+  | "phase";
+
+export interface RunEvent {
+  kind: RunEventKind;
+  seq: number;
+  ts: number;
+  agent?: string;
+  tier?: ModelTier;
+  duration_ms?: number;
+  tokens?: number;
+  repairs?: number;
+  escalated?: boolean;
+  error?: string;
+  action?: string;
+  detail?: string;
+  url?: string | null;
+  /** `thread/name.jpg`, served by /runs/{thread}/frames/{name}. */
+  path?: string;
+  note?: string;
+  target?: string;
+  reason?: string;
+  prompt?: string;
+  name?: string;
+}
+
+/** One screenshot from the run, in the order it was taken. */
+export interface Frame {
+  seq: number;
+  path: string;
+  url?: string | null;
+  note?: string;
+  ts: number;
+}
+
+// ---------------------------------------------------------------------------
+// Handover — driving the live browser
+// ---------------------------------------------------------------------------
+
+export interface PageElement {
+  ref: string;
+  role: string;
+  name: string;
+}
+
+export interface HandoverState {
+  thread_id: string;
+  reason: "login" | "payment" | "assist" | "captcha";
+  url: string | null;
+  title?: string | null;
+  note: string;
+  /** A payment handover is not returned to the automation, ever. */
+  terminal: boolean;
+  waited_seconds: number;
+  elements: PageElement[];
+  released: boolean;
+}
+
+export interface BrowserAction {
+  kind: string;
+  ref?: string;
+  label?: string;
+  text?: string;
+  url?: string;
+  key?: string;
+  x?: number;
+  y?: number;
+  values?: string[];
+  seconds?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Booking (v5)
+// ---------------------------------------------------------------------------
+
+export interface LivePrice {
+  price_inr: string;
+  line: string;
+}
+
+export interface BookingSearch {
+  ok: boolean;
+  site: string | null;
+  url: string | null;
+  title?: string | null;
+  checkin?: string | null;
+  checkout?: string | null;
+  prices: LivePrice[];
+  attempts: { site: string; outcome: string }[];
+  handed_over: string | null;
+  note: string;
+}
+
+/** The interrupt v5 raises once a plan is approved. */
+export interface BookingOffer {
+  type: "booking_offer";
+  destination: string | null;
+  checkin: string;
+  checkout: string;
+  travelers: number;
+  shortlist: { name: string; tier: string; price_per_night: number }[];
+  note: string;
+  config: { allow_book: boolean; allow_skip: boolean };
+}
+
+/** Either interrupt a v4/v5 run can raise. */
+export type RunInterrupt = PlanReviewInterrupt | BookingOffer;
+
+// ---------------------------------------------------------------------------
+// History
+// ---------------------------------------------------------------------------
+
+export interface ArchivedTrip {
+  trip_id: string;
+  thread_id: string;
+  graph_id: string;
+  origin: string | null;
+  destination: string | null;
+  country: string | null;
+  days: number | null;
+  travelers: number | null;
+  budget_total: number | null;
+  currency: string | null;
+  created_at: string;
+  plan_chars?: number;
+  final_plan?: string;
+  telemetry: {
+    agent_calls?: number;
+    total_ms?: number;
+    input_tokens?: number;
+    output_tokens?: number;
+    agents?: string[];
+  };
+}

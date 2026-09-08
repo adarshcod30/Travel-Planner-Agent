@@ -128,6 +128,62 @@ async def archive_trip(
     return str(row["trip_id"])
 
 
+async def list_trips(owner: str = "local-dev", limit: int = 50) -> list[dict[str, Any]]:
+    """Finished trips, newest first, without their plans.
+
+    The plan text is deliberately left out: a list of twenty trips would carry
+    160 KB of Markdown nobody is reading yet, and the index on
+    (owner, created_at) exists precisely so this stays a cheap query.
+    """
+    async with await psycopg.AsyncConnection.connect(_dsn(), row_factory=dict_row) as conn:
+        rows = await (
+            await conn.execute(
+                """
+                SELECT trip_id, thread_id, graph_id, origin, destination, country,
+                       days, travelers, budget_total, currency, telemetry, created_at,
+                       length(final_plan) AS plan_chars
+                  FROM trips
+                 WHERE owner = %s
+              ORDER BY created_at DESC
+                 LIMIT %s
+                """,
+                (owner, min(max(int(limit), 1), 200)),
+            )
+        ).fetchall()
+    return [_row_out(r) for r in rows]
+
+
+async def get_trip(trip_id: str, owner: str = "local-dev") -> dict[str, Any] | None:
+    """One archived trip, plan included."""
+    async with await psycopg.AsyncConnection.connect(_dsn(), row_factory=dict_row) as conn:
+        row = await (
+            await conn.execute(
+                "SELECT * FROM trips WHERE trip_id = %s AND owner = %s", (trip_id, owner)
+            )
+        ).fetchone()
+    return _row_out(row) if row else None
+
+
+async def delete_trip(trip_id: str, owner: str = "local-dev") -> bool:
+    async with await psycopg.AsyncConnection.connect(_dsn()) as conn:
+        cur = await conn.execute(
+            "DELETE FROM trips WHERE trip_id = %s AND owner = %s", (trip_id, owner)
+        )
+        await conn.commit()
+        return cur.rowcount > 0
+
+
+def _row_out(row: dict[str, Any]) -> dict[str, Any]:
+    """JSON-safe: uuid and timestamptz do not survive a response encoder."""
+    out = dict(row)
+    out["trip_id"] = str(out["trip_id"])
+    if (created := out.get("created_at")) is not None:
+        out["created_at"] = created.isoformat()
+    if (total := out.get("budget_total")) is not None:
+        out["budget_total"] = float(total)
+    return out
+
+
 async def purge_thread(thread_id: str) -> dict[str, int]:
     """Delete a thread and everything it owns. Returns rows removed per table.
 

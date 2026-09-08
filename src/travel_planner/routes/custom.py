@@ -23,7 +23,10 @@ from travel_planner.core.config import get_settings
 from travel_planner.core.logging import get_logger
 from travel_planner.core.storage import (
     complete_trip,
+    delete_trip,
     ensure_schema,
+    get_trip,
+    list_trips,
     purge_thread,
     storage_stats,
     sweep_abandoned,
@@ -414,6 +417,31 @@ async def complete(req: CompleteTripRequest = Body(...)) -> dict[str, Any]:
 async def discard(thread_id: str) -> dict[str, Any]:
     """Throw a thread away without archiving it — the 'discard this plan' path."""
     return {"removed": await purge_thread(thread_id)}
+
+
+@app.get("/trips", tags=["trips"])
+async def trips(limit: int = 50) -> dict[str, Any]:
+    """Finished trips, newest first — what the History view reads.
+
+    A completed run deletes its own checkpoints, so this table is the only
+    record that a trip ever happened. Plans are omitted from the list and
+    fetched one at a time.
+    """
+    items = await list_trips(limit=limit)
+    return {"trips": items, "count": len(items)}
+
+
+@app.get("/trips/{trip_id}", tags=["trips"])
+async def trip(trip_id: str) -> dict[str, Any]:
+    found = await get_trip(trip_id)
+    if found is None:
+        raise HTTPException(404, "no such trip")
+    return found
+
+
+@app.delete("/trips/{trip_id}", tags=["trips"])
+async def forget_trip(trip_id: str) -> dict[str, Any]:
+    return {"removed": await delete_trip(trip_id)}
 
 
 @app.post("/admin/sweep", tags=["admin"])

@@ -178,13 +178,50 @@ async def test_the_first_site_with_prices_wins(monkeypatch):
     assert "from about Rs 1,850" in out["note"]
 
 
-async def test_a_site_showing_no_prices_advances_the_chain():
+async def test_a_site_showing_no_prices_advances_the_chain(monkeypatch):
+    async def fake_serve(toolset, thread_id, **kw):
+        return "expired"
+
+    monkeypatch.setattr(booking.handover, "serve", fake_serve)
     ts = FakeBrowser(["### Snapshot\n```yaml\n- generic: nothing here\n```"])
     out = await booking.open_booking(
         ts, thread_id="t", targets=[("makemytrip", "https://x.test/a")]
     )
     assert out["ok"] is False
     assert out["attempts"] == [{"site": "makemytrip", "outcome": "opened but showed no prices"}]
+
+
+async def test_a_page_that_loaded_without_prices_is_offered_to_a_person(monkeypatch):
+    """The common case, and the one worth getting right: every aggregator
+    serves its search form to an automated browser and quotes nothing. That
+    form has the city and dates already in it and is one click from real
+    results — a click a person can make and the automation cannot."""
+    handed: dict = {}
+
+    async def fake_serve(toolset, thread_id, **kw):
+        handed.update(kw)
+        return "released"
+
+    monkeypatch.setattr(booking.handover, "serve", fake_serve)
+    # Empty first, then the person finishes the search and prices appear.
+    ts = FakeBrowser(["### Snapshot\n```yaml\n- generic: a search form\n```", LISTING])
+    out = await booking.open_booking(ts, thread_id="t", targets=[("agoda", "https://x.test/s")])
+
+    assert handed["reason"] == "assist"
+    assert out["ok"] is True
+    assert out["prices"], "the page is re-read once they are done"
+    assert "You finished the search on agoda" in out["note"]
+
+
+async def test_nobody_taking_the_offered_page_is_reported_plainly(monkeypatch):
+    async def fake_serve(toolset, thread_id, **kw):
+        return "expired"
+
+    monkeypatch.setattr(booking.handover, "serve", fake_serve)
+    ts = FakeBrowser(["### Snapshot\n```yaml\n- generic: a search form\n```"])
+    out = await booking.open_booking(ts, thread_id="t", targets=[("agoda", "https://x.test/s")])
+    assert out["ok"] is False
+    assert "nobody took it" in out["note"]
 
 
 async def test_a_payment_page_hands_over_and_does_not_come_back(monkeypatch):
@@ -243,4 +280,4 @@ async def test_every_site_failing_is_a_report_not_an_exception():
     failure comes back as something to show."""
     out = await booking.open_booking(FakeBrowser(["nothing"]), thread_id="t", targets=[])
     assert out["ok"] is False and out["site"] is None
-    assert "No booking site" in out["note"]
+    assert "No booking site could be opened" in out["note"]

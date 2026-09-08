@@ -5,9 +5,13 @@
  * any bearer token stay server-side, there is no CORS to configure, and the
  * browser talks to one origin regardless of where Aegra is deployed.
  *
- * SSE is passed straight through rather than buffered — the whole point of the
- * run stream is that events arrive as the graph produces them, so the response
- * body is forwarded unread.
+ * Nothing here reads the response body. SSE needs that because the point of a
+ * run stream is that events arrive as the graph produces them — but so do the
+ * browser screenshots, and for a sharper reason: `await res.text()` decodes
+ * bytes as UTF-8, and a JPEG is not UTF-8. Every invalid sequence becomes
+ * U+FFFD, so the reply keeps its status, its content-type and roughly its
+ * length, and is no longer an image. Nothing errors; the picture is simply
+ * blank. Forwarding the stream is both faster and the only correct thing.
  */
 
 import { NextRequest } from "next/server";
@@ -55,22 +59,20 @@ async function forward(req: NextRequest, path: string[]) {
     );
   }
 
-  if (isStream && upstream.body) {
-    return new Response(upstream.body, {
-      status: upstream.status,
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-      },
-    });
-  }
-
-  const text = await upstream.text();
-  return new Response(text, {
-    status: upstream.status,
-    headers: { "Content-Type": upstream.headers.get("content-type") ?? "application/json" },
+  const headers = new Headers({
+    "Content-Type": upstream.headers.get("content-type") ?? "application/json",
   });
+  if (isStream) {
+    headers.set("Content-Type", "text/event-stream");
+    headers.set("Cache-Control", "no-cache, no-transform");
+    headers.set("Connection", "keep-alive");
+  } else if (upstream.headers.get("cache-control")) {
+    // Frames are immutable once written and are served with a long max-age.
+    // Dropping it would make the filmstrip refetch every screenshot on every
+    // render.
+    headers.set("Cache-Control", upstream.headers.get("cache-control")!);
+  }
+  return new Response(upstream.body, { status: upstream.status, headers });
 }
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {

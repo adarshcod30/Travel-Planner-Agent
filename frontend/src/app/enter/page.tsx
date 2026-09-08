@@ -32,7 +32,7 @@ export default function EnterPage() {
   }
 
   return (
-    <div className="flex min-h-[70vh] items-center justify-center">
+    <div className="flex min-h-screen items-center justify-center px-5">
       <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-lg border border-line bg-surface p-6">
         <div>
           <h1 className="text-base font-semibold text-bright">Travel Planner Agent</h1>

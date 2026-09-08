@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { createThread, getThreadState, listVersions, streamRun } from "@/lib/aegra";
 import { Markdown } from "@/lib/markdown";
@@ -81,7 +82,18 @@ export default function ComparePage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto max-w-[1400px] space-y-5 px-5 py-5">
+      <header className="flex items-baseline justify-between">
+        <div>
+          <h1 className="text-sm font-semibold text-bright">Compare two architectures</h1>
+          <p className="mt-0.5 text-xs text-muted">
+            The same trip through both, so any difference is the topology and nothing else.
+          </p>
+        </div>
+        <Link href="/" className="text-xs text-muted hover:text-body">
+          back to the planner
+        </Link>
+      </header>
       <div className="rounded-lg border border-line bg-surface p-4">
         <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr_auto] md:items-end">
           <Picker label="Version A" versions={versions} value={left} onChange={setLeft} disabled={running} />

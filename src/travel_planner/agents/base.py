@@ -28,6 +28,33 @@ from travel_planner.prompts.context import INDIA_CONTEXT
 log = get_logger(__name__)
 
 
+def _join(values: list[str] | None) -> str:
+    return ", ".join(values) if values else ""
+
+
+def _pace(pace: str | None) -> str:
+    """Say what a pace means, rather than passing the word through.
+
+    "relaxed" is not self-explanatory to a model deciding how many stops a day
+    holds, and this is the field most likely to be ignored if it arrives as a
+    bare adjective.
+    """
+    return {
+        "relaxed": "relaxed - two or three things a day, with time to sit down",
+        "balanced": "balanced - a full day without rushing",
+        "packed": "packed - fit in as much as the day allows",
+    }.get((pace or "").lower(), "")
+
+
+def _cap(cap: float | None) -> str:
+    """A ceiling, phrased as one.
+
+    The budget *level* is a preference and this is a limit, so it is worded to
+    leave no room for the two to be confused.
+    """
+    return f"Rs {cap:,.0f} for the whole trip - the plan must come in under this" if cap else ""
+
+
 def render_trip_context(state: TripState) -> str:
     """Render the request fields every specialist needs, in one stable shape.
 
@@ -49,6 +76,27 @@ def render_trip_context(state: TripState) -> str:
     ]
     if req := state.get("request"):
         lines.append(f"Original request: {req}")
+
+    # Optional detail, rendered only when it was given. This is the half of the
+    # brief a traveller usually knows and is usually never asked for, and it is
+    # the difference between a plan that fits and one that merely describes the
+    # destination — so where it exists it is stated plainly rather than hinted.
+    for label, value in (
+        ("Travelling on", state.get("start_date")),
+        ("Pace", _pace(state.get("pace"))),
+        ("Hard budget ceiling", _cap(state.get("budget_cap_inr"))),
+        ("Dietary needs", _join(state.get("dietary"))),
+        ("Accessibility needs", _join(state.get("accessibility"))),
+        ("Preferred kind of stay", state.get("stay_type")),
+        ("Preferred transport", _join(state.get("transport"))),
+        ("Must include", state.get("must_see")),
+        ("Must avoid", state.get("avoid")),
+        ("Occasion", state.get("occasion")),
+        ("Travelling with", _join(state.get("travelling_with"))),
+        ("Also worth knowing", state.get("notes")),
+    ):
+        if value:
+            lines.append(f"{label}: {value}")
     if fb := state.get("human_feedback"):
         lines.append(f"Feedback to incorporate:\n{fb}")
     if notes := state.get("research_notes"):

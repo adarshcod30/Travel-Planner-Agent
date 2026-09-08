@@ -101,6 +101,18 @@ export interface TripState {
   budget_level?: BudgetLevel | null;
   season?: string | null;
   travelers?: number | null;
+  start_date?: string | null;
+  pace?: TripPace | null;
+  budget_cap_inr?: number | null;
+  dietary?: string[] | null;
+  accessibility?: string[] | null;
+  stay_type?: string | null;
+  transport?: string[] | null;
+  must_see?: string | null;
+  avoid?: string | null;
+  occasion?: string | null;
+  travelling_with?: string[] | null;
+  notes?: string | null;
   destination?: DestinationChoice | null;
   budget?: BudgetBreakdown | null;
   hotels?: { hotels: Hotel[] } | null;
@@ -174,6 +186,8 @@ export interface ThreadState {
   tasks?: { interrupts?: { value: RunInterrupt }[] }[];
 }
 
+export type TripPace = "relaxed" | "balanced" | "packed";
+
 export interface TripRequest {
   request: string;
   /** Where the traveller starts. Asked rather than assumed — it decides the
@@ -184,6 +198,23 @@ export interface TripRequest {
   budget_level: BudgetLevel;
   season: string;
   travelers: number;
+
+  /* Everything below is optional and usually absent. It is also the half of a
+     brief a traveller knows and is never asked for, which is why the form
+     bothers: a specialist can only use what it has been told. */
+  start_date?: string;
+  pace?: TripPace;
+  /** A ceiling in rupees, not a preference. The plan must come in under it. */
+  budget_cap_inr?: number | null;
+  dietary?: string[];
+  accessibility?: string[];
+  stay_type?: string;
+  transport?: string[];
+  must_see?: string;
+  avoid?: string;
+  occasion?: string;
+  travelling_with?: string[];
+  notes?: string;
 }
 
 /** What the planner page tracks while a run is in flight. */

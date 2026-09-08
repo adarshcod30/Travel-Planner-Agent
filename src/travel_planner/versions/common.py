@@ -26,6 +26,17 @@ DEFAULT_BUDGET_LEVEL = "mid-range"
 # ---------------------------------------------------------------------------
 
 
+def _as_list(value: Any) -> list[str]:
+    """A comma-separated string or a list, both arriving as a clean list.
+
+    Clients differ on which they send for the same field, and a specialist
+    should never have to care.
+    """
+    if isinstance(value, str):
+        value = value.split(",")
+    return [s for s in (str(v).strip() for v in (value or [])) if s]
+
+
 def intake_node(state: TripState) -> dict[str, Any]:
     """Normalise the incoming request and fill defaults.
 
@@ -53,6 +64,17 @@ def intake_node(state: TripState) -> dict[str, Any]:
     request = (state.get("request") or "").strip() or None
     origin = (state.get("origin") or "").strip() or None
 
+    pace = (state.get("pace") or "").strip().lower() or None
+    if pace not in (None, "relaxed", "balanced", "packed"):
+        pace = None
+    cap = state.get("budget_cap_inr")
+    try:
+        cap = float(cap) if cap not in (None, "") else None
+    except (TypeError, ValueError):
+        cap = None
+    if cap is not None and cap <= 0:
+        cap = None
+
     update: dict[str, Any] = {
         "request": request,
         "origin": origin,
@@ -62,6 +84,20 @@ def intake_node(state: TripState) -> dict[str, Any]:
         "interests": interests,
         "season": (state.get("season") or "").strip() or None,
         "iteration": 0,
+        # Optional detail. Normalised the same way as everything else so a
+        # downstream node never has to ask whether a list is a list.
+        "start_date": (state.get("start_date") or "").strip() or None,
+        "pace": pace,
+        "budget_cap_inr": cap,
+        "dietary": _as_list(state.get("dietary")),
+        "accessibility": _as_list(state.get("accessibility")),
+        "stay_type": (state.get("stay_type") or "").strip() or None,
+        "transport": _as_list(state.get("transport")),
+        "must_see": (state.get("must_see") or "").strip() or None,
+        "avoid": (state.get("avoid") or "").strip() or None,
+        "occasion": (state.get("occasion") or "").strip() or None,
+        "travelling_with": _as_list(state.get("travelling_with")),
+        "notes": (state.get("notes") or "").strip() or None,
     }
     # A reused thread carries the previous trip's outputs. Left in place they
     # would leak into every prompt ("Weather report: 8-16 C" for the wrong

@@ -43,15 +43,28 @@ body {
   background: transparent;
 }
 
-/* Markdown produced by the planner, rendered without a heavyweight library. */
+/* Markdown produced by the planner, rendered without a heavyweight library.
+ *
+ * Sized to be read rather than scanned: the plan is the deliverable, and at
+ * 13px in a narrow column it read like log output. `overflow-wrap` is not
+ * cosmetic — a long unbroken string (a URL in a research note, a hotel name
+ * with no spaces) pushed the whole column wider than its container and put a
+ * horizontal scrollbar on the page. */
+.plan {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
 .plan h1 {
-  font-size: 1.5rem;
-  font-weight: 600;
+  font-size: 2rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
   color: var(--color-bright);
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.75rem;
+  line-height: 1.2;
 }
 .plan h2 {
-  font-size: 1.05rem;
+  font-size: 1.25rem;
   font-weight: 600;
   color: var(--color-accent);
   margin: 1.75rem 0 0.6rem;
@@ -59,7 +72,7 @@ body {
   border-bottom: 1px solid var(--color-line);
 }
 .plan h3 {
-  font-size: 0.95rem;
+  font-size: 1.02rem;
   font-weight: 600;
   color: var(--color-bright);
   margin: 1.1rem 0 0.35rem;
@@ -89,11 +102,26 @@ body {
   border-top: 1px solid var(--color-line);
   margin: 1.5rem 0;
 }
+/* A table is the one thing that legitimately needs more width than the column
+ * has — a budget breakdown should scroll rather than squeeze. */
 .plan table {
   width: 100%;
   border-collapse: collapse;
   margin: 0.75rem 0;
-  font-size: 0.875rem;
+  font-size: 0.9rem;
+  display: block;
+  overflow-x: auto;
+}
+.plan td,
+.plan th {
+  white-space: nowrap;
+}
+.plan td:last-child,
+.plan th:last-child {
+  white-space: normal;
+}
+.plan code {
+  overflow-wrap: anywhere;
 }
 .plan th,
 .plan td {

@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import type { RunPhase } from "@/lib/types";
 
-export type ViewKey = "setup" | "live" | "plan" | "history";
+export type ViewKey = "setup" | "live" | "plan" | "history" | "about";
 
 /**
  * The frame around everything: who you are looking at, where you are, and what
@@ -79,6 +79,7 @@ const TABS: { key: ViewKey; label: string }[] = [
   { key: "live", label: "Live" },
   { key: "plan", label: "The plan" },
   { key: "history", label: "History" },
+  { key: "about", label: "About" },
 ];
 
 function Tab({

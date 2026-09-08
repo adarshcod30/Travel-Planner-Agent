@@ -1,5 +1,7 @@
 """Shared intake and finalize nodes."""
 
+import pytest
+
 from travel_planner.core.state import (
     AgentError,
     Attraction,
@@ -27,6 +29,9 @@ from travel_planner.versions.common import (
 
 
 def test_intake_fills_defaults_on_empty_state():
+    """An exact comparison on purpose. Adding a state key should require saying
+    what it defaults to, rather than letting it arrive undefined at whichever
+    node reads it first."""
     out = intake_node({})
     expected = {
         "request": None,
@@ -37,9 +42,52 @@ def test_intake_fills_defaults_on_empty_state():
         "interests": [],
         "season": None,
         "iteration": 0,
+        # Optional detail: absent from most requests, normalised all the same.
+        "start_date": None,
+        "pace": None,
+        "budget_cap_inr": None,
+        "dietary": [],
+        "accessibility": [],
+        "stay_type": None,
+        "transport": [],
+        "must_see": None,
+        "avoid": None,
+        "occasion": None,
+        "travelling_with": [],
+        "notes": None,
     }
     expected.update(dict.fromkeys(GENERATED_KEYS))
     assert out == expected
+
+
+def test_optional_detail_is_normalised_however_it_arrives():
+    """Clients differ on whether a multi-value field is a list or a comma
+    string, and a specialist should never have to care."""
+    out = intake_node(
+        {
+            "request": "x",
+            "dietary": "vegetarian, no beef",
+            "transport": ["train", " flight "],
+            "pace": "  Relaxed  ",
+            "budget_cap_inr": "45000",
+        }
+    )
+    assert out["dietary"] == ["vegetarian", "no beef"]
+    assert out["transport"] == ["train", "flight"]
+    assert out["pace"] == "relaxed"
+    assert out["budget_cap_inr"] == 45000.0
+
+
+@pytest.mark.parametrize("bad", ["", "quickly", None])
+def test_an_unknown_pace_is_dropped_rather_than_passed_through(bad):
+    assert intake_node({"request": "x", "pace": bad})["pace"] is None
+
+
+@pytest.mark.parametrize("bad", ["", "lots", -5, 0, None])
+def test_a_meaningless_budget_ceiling_is_dropped(bad):
+    """A ceiling of zero is not a ceiling, and every downstream agent is told
+    the plan must come in under it."""
+    assert intake_node({"request": "x", "budget_cap_inr": bad})["budget_cap_inr"] is None
 
 
 def test_intake_clears_previous_runs_outputs():

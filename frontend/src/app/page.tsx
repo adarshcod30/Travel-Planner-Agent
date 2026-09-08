@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { AboutView } from "@/components/AboutView";
 import { HistoryView } from "@/components/HistoryView";
 import { LiveView } from "@/components/LiveView";
 import { PlanView } from "@/components/PlanView";
@@ -102,6 +103,7 @@ export default function PlannerPage() {
       {view === "live" && <LiveView run={run} />}
       {view === "plan" && <PlanView run={run} onFinish={finish} />}
       {view === "history" && <HistoryView />}
+      {view === "about" && <AboutView versions={run.versions} />}
     </Shell>
   );
 }

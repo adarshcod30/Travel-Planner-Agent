@@ -51,6 +51,11 @@ from typing_extensions import TypedDict
 # ---------------------------------------------------------------------------
 
 BudgetLevel = Literal["budget", "mid-range", "luxury"]
+
+#: How much a day should hold. The single most useful thing a traveller can say
+#: beyond where and how long — three days at "relaxed" is a different trip from
+#: three days at "packed", and no amount of prompt engineering recovers it.
+TripPace = Literal["relaxed", "balanced", "packed"]
 ReviewVerdict = Literal["approved", "needs_revision"]
 HumanDecision = Literal["accept", "edit", "response", "ignore", "comments"]
 
@@ -363,6 +368,32 @@ class TripState(TypedDict):
     budget_level: NotRequired[BudgetLevel | None]
     season: NotRequired[str | None]
     travelers: NotRequired[int | None]
+
+    # --- optional detail -------------------------------------------------------
+    #
+    # None of this is required, and every field is absent from most requests.
+    # It exists because the difference between a generic plan and a useful one
+    # is nearly always something the traveller knew and was never asked: that
+    # two of the four are vegetarian, that someone cannot manage stairs, that
+    # the budget is a ceiling rather than a preference, that they have three
+    # days but would rather see one city properly than three badly.
+    #
+    # Each is rendered into the shared prompt block only when it is set, so an
+    # empty form costs nothing.
+    start_date: NotRequired[str | None]
+    pace: NotRequired[TripPace | None]
+    #: A hard ceiling in rupees, if there is one. The budget *level* is a
+    #: preference; this is a limit the plan must come in under.
+    budget_cap_inr: NotRequired[float | None]
+    dietary: NotRequired[list[str] | None]
+    accessibility: NotRequired[list[str] | None]
+    stay_type: NotRequired[str | None]
+    transport: NotRequired[list[str] | None]
+    must_see: NotRequired[str | None]
+    avoid: NotRequired[str | None]
+    occasion: NotRequired[str | None]
+    travelling_with: NotRequired[list[str] | None]
+    notes: NotRequired[str | None]
 
     # --- v1 only: a single unaided pass ---
     written_plan: NotRequired[WrittenPlan | None]

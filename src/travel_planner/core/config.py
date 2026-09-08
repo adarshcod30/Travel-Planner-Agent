@@ -88,6 +88,19 @@ class Settings(BaseSettings):
     max_concurrent_browsers: int = 2
     browser_slot_timeout_seconds: float = 180.0
 
+    # How long a run will hold a live browser open waiting for a person to take
+    # it over. Unlike v4's plan review — which checkpoints and can be answered
+    # days later — a handover keeps a Chromium process and one of very few
+    # browser slots occupied, so it has to expire. Five minutes is long enough
+    # to sign in and short enough that a forgotten tab does not block the next
+    # traveller.
+    browser_handover_timeout_seconds: float = 300.0
+
+    # Whether v5 offers to take an approved plan to a real booking page. Off by
+    # default: it drives commercial sites and asks a person to finish, which is
+    # not something a deployment should start doing without being told to.
+    booking_enabled: bool = True
+
     playwright_mcp_url: str = "http://localhost:8931/mcp"
     playwright_mcp_headless: bool = True
     playwright_mcp_command: str = "npx"

@@ -1,7 +1,9 @@
 """v5 — v4 plus real research over MCP.
 
     intake -> destination -> research -> [ weather | attraction | budget | customs ]
-              ... -> itinerary -> review -> section_gate -> ...
+              ... -> itinerary -> review -> section_gate -> finalize -> remember
+              -> booking_gate ──book──> book -> END
+                              ──skip──> END
 
 One node is added to v4, and it changes what every other node sees: `research`
 drives four MCP servers — a real browser via Playwright, the custom travel-mcp
@@ -38,6 +40,11 @@ from travel_planner.versions.v3_orchestrator.graph import add_specialist_dag
 from travel_planner.versions.v4_hitl.gate import (
     make_section_gate_node,
     route_after_section_gate,
+)
+from travel_planner.versions.v5_mcp.book_nodes import (
+    make_book_node,
+    make_booking_gate,
+    route_after_booking_gate,
 )
 
 log = get_logger(__name__)
@@ -113,7 +120,9 @@ def build(*, max_iterations: int | None = None, settings: Settings | None = None
     """v4's topology — section gate included — with research before the fan-out."""
     g = StateGraph(TripState)
     g.add_node("research", make_research_node(settings))
-    add_specialist_dag(g, max_iterations=max_iterations, fanout_source="research")
+    add_specialist_dag(
+        g, max_iterations=max_iterations, fanout_source="research", tail="booking_gate"
+    )
     g.add_edge("destination", "research")
 
     g.add_node("section_gate", make_section_gate_node(max_iterations))
@@ -123,6 +132,14 @@ def build(*, max_iterations: int | None = None, settings: Settings | None = None
         route_after_section_gate,
         ["finalize", "orchestrator", "destination", *FANOUT, END],
     )
+
+    # The plan is finished by this point, so offering to book it is the last
+    # thing v5 does — and the only part of any version that acts on the world
+    # rather than describing it.
+    g.add_node("booking_gate", make_booking_gate(settings))
+    g.add_node("book", make_book_node(settings))
+    g.add_conditional_edges("booking_gate", route_after_booking_gate, {"book": "book", END: END})
+    g.add_edge("book", END)
     return g
 
 

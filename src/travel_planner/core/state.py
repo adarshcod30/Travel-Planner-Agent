@@ -270,6 +270,34 @@ class Revision(BaseModel):
     at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat(timespec="seconds"))
 
 
+class LivePrice(BaseModel):
+    """One priced line read off a real booking page."""
+
+    price_inr: str
+    line: str
+
+
+class BookingSearch(BaseModel):
+    """What happened when an approved plan was taken to a real booking site.
+
+    Records the attempt, not a transaction. Nothing here means anything was
+    bought — `handed_over` says a person took the browser, and payment is
+    always theirs to complete.
+    """
+
+    ok: bool = False
+    site: str | None = None
+    url: str | None = None
+    title: str | None = None
+    checkin: str | None = None
+    checkout: str | None = None
+    prices: list[LivePrice] = Field(default_factory=list)
+    attempts: list[dict[str, str]] = Field(default_factory=list)
+    #: "released" | "expired" | "payment" — or None if no person was needed.
+    handed_over: str | None = None
+    note: str = ""
+
+
 class OrchestratorDecision(BaseModel):
     """Which specialists to re-run, and why."""
 
@@ -364,6 +392,11 @@ class TripState(TypedDict):
 
     # --- research provenance (v5) ---
     research_notes: NotRequired[list[str] | None]
+
+    # --- booking (v5) ---
+    #: Whether the traveller asked for the plan to be taken to a booking page.
+    wants_booking: NotRequired[bool | None]
+    booking: NotRequired[BookingSearch | None]
 
     # --- result ---
     final_plan: NotRequired[str | None]

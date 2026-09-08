@@ -134,7 +134,7 @@ def route_after_orchestrator(state: TripState) -> str | list[str]:
 # Resume payloads (v4+)
 # ---------------------------------------------------------------------------
 
-_RESUME_TYPES = ("accept", "edit", "response", "ignore", "comments")
+_RESUME_TYPES = ("accept", "edit", "response", "ignore", "comments", "book", "skip")
 
 
 def parse_resume(payload: Any) -> tuple[str, Any]:

@@ -28,7 +28,9 @@ from travel_planner.core.storage import (
     storage_stats,
     sweep_abandoned,
 )
+from travel_planner.tools.mcp import handover
 from travel_planner.tools.mcp.client import browser_capacity
+from travel_planner.tools.mcp.control import ControlError
 from travel_planner.tools.mcp.frames import FRAME_ROOT, frame_path
 
 log = get_logger(__name__)
@@ -295,6 +297,77 @@ async def frames(thread_id: str) -> dict[str, Any]:
         "count": len(names),
         "frames": [f"/runs/{thread_id}/frames/{n}" for n in names],
     }
+
+
+# ---------------------------------------------------------------------------
+# Handover — driving a live browser from the UI
+# ---------------------------------------------------------------------------
+#
+# These are the other side of `tools/mcp/handover.py`. A v5 run that hits a
+# login wall parks inside its node, still holding the browser, and waits here.
+# The browser lives in this process, which is why the queue does too: routing a
+# click to a worker that does not hold the Chromium would accomplish nothing.
+
+
+@app.get("/handover", tags=["live"])
+async def handovers() -> dict[str, Any]:
+    """Every run currently waiting for a person."""
+    items = handover.waiting()
+    return {"waiting": items, "count": len(items)}
+
+
+@app.get("/handover/{thread_id}", tags=["live"])
+async def handover_state(thread_id: str) -> dict[str, Any]:
+    """Where the browser is right now — url, title, and what is clickable.
+
+    Polled while someone is driving, so it deliberately does not touch the
+    browser: the node refreshes this after every action and on a timer, and a
+    second reader taking its own snapshot would fight it for the session.
+    """
+    h = handover.current(thread_id)
+    if h is None:
+        raise HTTPException(404, "no handover is open for this thread")
+    return h.describe()
+
+
+class HandoverAction(BaseModel):
+    """One instruction for the live browser.
+
+    Validated by `control.Action.parse`, which refuses unknown keys and any
+    action outside a closed set — this arrives over HTTP and aims at a real
+    browser, so a typo should be an error rather than something reinterpreted.
+    """
+
+    kind: str
+    ref: str | None = None
+    label: str = ""
+    text: str = ""
+    url: str = ""
+    key: str = ""
+    x: int | None = None
+    y: int | None = None
+    values: list[str] = []
+    seconds: float = 1.0
+
+
+@app.post("/handover/{thread_id}/action", tags=["live"])
+async def handover_action(thread_id: str, action: HandoverAction = Body(...)) -> dict[str, Any]:
+    """Run one action against the live browser and return the page it produced."""
+    try:
+        return await handover.submit(thread_id, action.model_dump())
+    except LookupError as exc:
+        # 409 rather than 404: the thread is real, the moment has passed.
+        raise HTTPException(409, str(exc)) from exc
+    except ControlError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(504, str(exc)) from exc
+
+
+@app.post("/handover/{thread_id}/release", tags=["live"])
+async def handover_release(thread_id: str) -> dict[str, Any]:
+    """Give the browser back. The run continues from where it was blocked."""
+    return {"released": handover.release(thread_id)}
 
 
 # ---------------------------------------------------------------------------

@@ -43,7 +43,11 @@ JOIN = ("packing", "hotel", "attraction", "customs")
 
 
 def add_specialist_dag(
-    g: StateGraph, *, max_iterations: int | None = None, fanout_source: str = "destination"
+    g: StateGraph,
+    *,
+    max_iterations: int | None = None,
+    fanout_source: str = "destination",
+    tail: str = END,
 ) -> None:
     """The specialist layers shared by v3, v4 and v5: intake through review.
 
@@ -54,6 +58,10 @@ def add_specialist_dag(
     out straight from `destination`; v5 inserts its research node in between
     and passes its own name, which is cleaner than adding the edges here and
     unpicking them afterwards — `StateGraph` has no edge removal.
+
+    `tail` names what follows `remember`. v3 and v4 finish there; v5 goes on to
+    offer a booking. Same reason it is a parameter: an edge added here cannot
+    be taken back.
     """
     g.add_node("intake", intake_node)
     g.add_node("destination", rerun_aware(DestinationAgent()))
@@ -96,7 +104,7 @@ def add_specialist_dag(
     # Remember runs after the plan exists, so it records a real trip rather than
     # an abandoned one.
     g.add_edge("finalize", "remember")
-    g.add_edge("remember", END)
+    g.add_edge("remember", tail)
 
 
 def build(*, max_iterations: int | None = None) -> StateGraph:

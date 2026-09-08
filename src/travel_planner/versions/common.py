@@ -90,6 +90,8 @@ GENERATED_KEYS: tuple[str, ...] = (
     "section_comments",
     "revisions",
     "research_notes",
+    "wants_booking",
+    "booking",
     "final_plan",
 )
 

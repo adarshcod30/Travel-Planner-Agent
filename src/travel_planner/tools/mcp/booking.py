@@ -360,6 +360,69 @@ async def search_by_hand(
     return {}
 
 
+async def proceed_toward_booking(
+    toolset: McpToolset,
+    *,
+    thread_id: str,
+    city: str,
+    checkin: date,
+    checkout: date,
+    travelers: int,
+    listing_url: str | None = None,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    """Carry on from a list of prices to the point a person has to take over.
+
+    Finding prices is not booking. Stopping at the listing was the honest
+    half-measure — it showed what a room costs and then left, which is exactly
+    where someone still has everything to do. This goes further: open a
+    well-priced room, start the booking, and stop the moment the site asks who
+    you are.
+
+    That stop is the deliverable, not a failure. Signing in is the traveller's
+    to do and paying is theirs alone, so the useful thing this can do is get
+    them to that page with the search already filled in.
+    """
+    settings = settings or get_settings()
+    outcome = await agent.browse(
+        toolset,
+        (
+            f"You are on a list of hotels in {city} for "
+            f"{checkin.strftime('%-d %B')} to {checkout.strftime('%-d %B %Y')}, "
+            f"{travelers} adults. Open a reasonably priced hotel and begin booking a room "
+            "— choose the room and press whatever continues to the next step. "
+            "Stop as soon as the site asks anyone to sign in, enter personal details, or "
+            "pay. Do not fill in any of those."
+        ),
+        thread_id=thread_id,
+        # Back to the listing first. The pass that found the prices left the
+        # browser wherever it finished, and starting from a half-scrolled page
+        # with stale refs is how this failed the first time it was tried.
+        start_url=listing_url,
+        max_steps=settings.browser_agent_max_steps,
+        budget_seconds=settings.browser_agent_budget_seconds,
+        settings=settings,
+    )
+
+    page = await control.read_page(toolset)
+    reason = outcome.needs_person or page.get("needs_person")
+    if reason:
+        handed = await _hand_over(toolset, thread_id, reason, page, settings)
+        return {
+            "reached": reason,
+            "handed_over": handed,
+            "url": page.get("url"),
+            "steps": outcome.steps,
+        }
+    return {
+        "reached": None,
+        "handed_over": None,
+        "url": page.get("url"),
+        "steps": outcome.steps,
+        "why": outcome.reason,
+    }
+
+
 async def open_booking(
     toolset: McpToolset,
     *,
@@ -371,6 +434,7 @@ async def open_booking(
     checkout: date | None = None,
     travelers: int = 2,
     by_hand: bool = True,
+    go_further: bool = True,
 ) -> dict[str, Any]:
     """Walk the targets until one shows live prices or asks for a person.
 
@@ -380,6 +444,7 @@ async def open_booking(
     """
     settings = settings or get_settings()
     by_hand = by_hand and bool(city and checkin and checkout)
+    go_further = go_further and by_hand
     attempts: list[dict[str, str]] = []
     #: The best page that actually rendered. A site can load perfectly and
     #: still show no prices — its search form, with the city and dates already
@@ -427,7 +492,22 @@ async def open_booking(
         prices = extract_prices(page.get("snapshot", ""))
         if prices:
             log.info("booking_prices_found", site=label, count=len(prices))
-            return _report(label, url, page, attempts, handed_over=None, prices=prices)
+            report = _report(label, url, page, attempts, handed_over=None, prices=prices)
+            if go_further:
+                further = await proceed_toward_booking(
+                    toolset,
+                    thread_id=thread_id,
+                    listing_url=url,
+                    city=city,
+                    checkin=checkin,  # type: ignore[arg-type]
+                    checkout=checkout,  # type: ignore[arg-type]
+                    travelers=travelers,
+                    settings=settings,
+                )
+                report["handed_over"] = further.get("handed_over")
+                report["url"] = further.get("url") or report["url"]
+                report["note"] = _further_note(label, prices, further)
+            return report
 
         attempts.append({"site": label, "outcome": _what_it_showed(url, page.get("url"))})
         if landed is None:
@@ -579,6 +659,23 @@ def _report(
         "handed_over": handed_over,
         "note": _note(site, prices, handed_over),
     }
+
+
+def _further_note(site: str, prices: list[dict[str, str]], further: dict[str, Any]) -> str:
+    """What happened once it tried to actually book something."""
+    cheapest = min(int(p["price_inr"]) for p in prices) if prices else 0
+    found = f"{site} is showing {len(prices)} live prices, from about Rs {cheapest:,}."
+    match (further.get("reached"), further.get("handed_over")):
+        case ("payment", _):
+            return f"{found} It reached the payment page — that part is yours."
+        case (_, "released"):
+            return f"{found} It got as far as the sign-in and you took over."
+        case (_, "expired"):
+            return f"{found} It reached a sign-in and waited, but nobody came."
+        case (reason, _) if reason:
+            return f"{found} It reached a {reason} page and is holding the browser for you."
+        case _:
+            return f"{found} It could not get further on its own without you."
 
 
 def _note(site: str, prices: list[dict[str, str]], handed_over: str | None) -> str:

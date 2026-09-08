@@ -187,6 +187,7 @@ async def browse(
     start_url: str | None = None,
     max_steps: int = 18,
     budget_seconds: float = 180.0,
+    settle_seconds: float = 5.0,
     settings: Settings | None = None,
 ) -> Outcome:
     """Drive the browser toward `goal` until it is reached or the budget runs out.
@@ -204,6 +205,13 @@ async def browse(
         try:
             await control.perform(
                 toolset, control.Action(kind="navigate", url=start_url), thread_id=thread_id
+            )
+            # Let it settle. `navigate` returns on domcontentloaded, and every
+            # site worth browsing fills its results in after that — reading
+            # immediately gives the model an empty shell and a first move made
+            # against a page that no longer exists by the time it lands.
+            await control.perform(
+                toolset, control.Action(kind="wait", seconds=settle_seconds), thread_id=thread_id
             )
         except control.ControlError as exc:
             return Outcome(

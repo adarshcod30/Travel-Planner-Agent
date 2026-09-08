@@ -241,6 +241,22 @@ def _looks_like_a_name(text: str) -> bool:
     return not re.fullmatch(r"[\d.,()₹%+\-\s]+", stripped)
 
 
+def _name_first(fragments: list[str]) -> list[str]:
+    """Put the fragment that reads like a name in front.
+
+    A card's fragments come out as "| 11.3 km drive to Taj Mahal" and "Lemon
+    Tree Hotel Agra", and longest-first put the distance first — so the model
+    read a list of directions rather than a list of hotels. What it is called
+    is the part that decides whether to open it.
+    """
+
+    def name_like(text: str) -> int:
+        first = text.lstrip("|·-— ")[:1]
+        return 0 if first.isupper() and not text.lstrip("|·-— ")[:1].isdigit() else 1
+
+    return sorted(fragments, key=lambda f: (name_like(f), -len(f)))
+
+
 def _label_from_children(lines: list[str], index: int, indent: int) -> str:
     """Name an unnamed container from the best text inside it.
 
@@ -268,8 +284,8 @@ def _label_from_children(lines: list[str], index: int, indent: int) -> str:
         if _looks_like_a_name(text) and text not in parts:
             parts.append(text)
 
-    parts.sort(key=len, reverse=True)
-    return " · ".join(parts[:2])[:90]
+    ordered = _name_first([p.lstrip("|·-— ").strip() for p in parts])
+    return " · ".join(ordered[:2])[:90]
 
 
 def _price_anchors(lines: list[str]) -> set[int]:
@@ -310,8 +326,13 @@ def _score(role: str, name: str, clickable: bool, borrowed: bool = False) -> int
     # clicking. Scored above every filter and every input deliberately: the
     # first version ranked inputs highest and buried all 429 hotels beneath a
     # sort dropdown and a list of amenity checkboxes.
-    if borrowed and clickable and len(name) > 15:
-        return 120
+    if borrowed and clickable:
+        # Several distinct pieces of content is what tells a result card apart
+        # from a filter chip. "Lemon Tree Hotel Agra · Restaurant" is a hotel;
+        # "Guaranteed Late Check-out" is an amenity filter that happens to be a
+        # clickable list item, and by length alone the two were tied — so the
+        # filters won on document order and the hotels never made the cut.
+        return 140 if " · " in name else 25
     if role in ("textbox", "searchbox", "combobox", "spinbutton"):
         return 100
     if role == "button" and name:
@@ -458,6 +479,24 @@ _GATE_JS = (
     // rather than a password, so "is there a password field" missed the single
     // most common login wall on every site this planner actually uses.
     phone: q('input[type=tel], input[autocomplete*="tel"], input[name*="mobile" i], input[name*="phone" i]'),
+    // Whether a credential field is actually what this page is *for*, rather
+    // than a sign-in widget parked in the header. Every travel site has one of
+    // those on every page, so "there is a phone input somewhere" flagged the
+    // flight search as a login wall. A real one is in a dialog, or on a page
+    // with almost nothing else on it.
+    credentialInModal: (() => {
+      const field = deep('input[type=password], input[type=tel], input[autocomplete*="one-time-code"]');
+      if (!field) return false;
+      for (let el = field.parentElement; el; el = el.parentElement) {
+        const s = getComputedStyle(el);
+        if ((s.position === 'fixed' || s.position === 'absolute') &&
+            ((+s.zIndex || 0) > 100 || el.getAttribute('role') === 'dialog' || el.tagName === 'DIALOG')) {
+          return true;
+        }
+      }
+      return false;
+    })(),
+    inputCount: deepAll('input').length,
     card: q('input[autocomplete*="cc-number"], input[name*="cardnumber" i], input[name*="card-number" i], input[name*="card_number" i]'),
     upi: q('input[name*="upi" i], input[id*="upi" i]'),
     payText: /proceed to pay|pay now|card number|cvv|net banking/.test(text),
@@ -470,7 +509,14 @@ _GATE_JS = (
 AUTH_PATHS = ("/login", "/signin", "/sign-in", "/auth/", "/account/login")
 
 #: Path fragments that mean money is about to move.
-PAYMENT_PATHS = ("/payment", "/checkout/pay", "/paymentoptions")
+PAYMENT_PATHS = ("/payment", "/checkout/pay", "/paymentoptions", "-booking/", "/booking/")
+
+#: Pages that talk about cards without asking for one. Every Indian travel site
+#: markets a co-branded credit card, and those pages are thick with "card
+#: number", "CVV" and "net banking" — a run once stopped on
+#: `makemytrip.com/cards/makemytrip-icici-bank-credit-card` and reported it had
+#: reached the payment page.
+_CARD_MARKETING = ("/cards/", "/credit-card", "/offers/", "/blog/")
 
 
 #: Whether a modal is sitting over the page, and whether it can be closed.
@@ -483,26 +529,38 @@ PAYMENT_PATHS = ("/payment", "/checkout/pay", "/paymentoptions")
 #: clicking a hotel card over and over while the overlay ate every one.
 _OVERLAY_JS = """() => {
   const vw = innerWidth, vh = innerHeight;
-  const candidates = [...document.querySelectorAll('div,section,aside,dialog')].filter(el => {
+  const looksModal = (el) => {
     const s = getComputedStyle(el);
     if (s.position !== 'fixed' && s.position !== 'absolute') return false;
     if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) return false;
     const r = el.getBoundingClientRect();
-    if (r.width < vw * 0.25 || r.height < vh * 0.25) return false;
-    return (+s.zIndex || 0) > 100 || el.getAttribute('role') === 'dialog' || el.tagName === 'DIALOG';
-  });
+    if (r.width < vw * 0.2 || r.height < vh * 0.2) return false;
+    if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) return false;
+    // A dialog role or a stacking context above the page is the usual tell,
+    // but a promotional login panel often has neither until it is shown — so
+    // "large, floating, on screen, and closable" counts too.
+    return true;
+  };
+  const closerFor = (el) => el.querySelector(
+      '[aria-label*="close" i],[title*="close" i],[class*="close" i],[data-testid*="close" i],button.close'
+    ) || [...el.querySelectorAll('button,span,div[role=button],svg,i')].find(
+      n => ['\u00d7', '\u2715', '\u2716', '\u274c', 'x', 'close'].includes(
+        (n.textContent || n.getAttribute('aria-label') || '').trim().toLowerCase())
+    );
+
+  const candidates = [...document.querySelectorAll('div,section,aside,dialog')].filter(looksModal);
   if (!candidates.length) return { present: false };
-  const modal = candidates.sort((a, b) =>
-    (+getComputedStyle(b).zIndex || 0) - (+getComputedStyle(a).zIndex || 0))[0];
-  const closer = modal.querySelector(
-    '[aria-label*="close" i],[title*="close" i],[class*="close" i],[data-testid*="close" i],button.close'
-  ) || [...modal.querySelectorAll('button,span,div[role=button],svg')].find(
-    el => ['\u00d7', '\u2715', '\u2716', '\u274c', 'x'].includes((el.textContent || '').trim().toLowerCase())
-  );
+  const scored = candidates
+    .map(el => ({ el, z: +getComputedStyle(el).zIndex || 0, closer: closerFor(el) }))
+    .filter(c => c.closer || c.z > 100 || c.el.getAttribute('role') === 'dialog')
+    .sort((a, b) => b.z - a.z);
+  if (!scored.length) return { present: false };
+  const top = scored[0];
   return {
     present: true,
-    text: (modal.innerText || '').slice(0, 200),
-    closable: !!closer,
+    z: top.z,
+    text: (top.el.innerText || '').replace(/\\s+/g, ' ').slice(0, 160),
+    closable: !!top.closer,
   };
 }"""
 
@@ -541,24 +599,29 @@ async def dismiss_overlay(toolset: McpToolset, timeout: float = DEFAULT_TIMEOUT)
 #: page is not mutated by a query that was only meant to look.
 _CLOSE_JS = """() => {
   const vw = innerWidth, vh = innerHeight;
-  const candidates = [...document.querySelectorAll('div,section,aside,dialog')].filter(el => {
+  const looksModal = (el) => {
     const s = getComputedStyle(el);
     if (s.position !== 'fixed' && s.position !== 'absolute') return false;
     if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) return false;
     const r = el.getBoundingClientRect();
-    if (r.width < vw * 0.25 || r.height < vh * 0.25) return false;
-    return (+s.zIndex || 0) > 100 || el.getAttribute('role') === 'dialog' || el.tagName === 'DIALOG';
-  });
-  if (!candidates.length) return { ok: false };
-  const modal = candidates.sort((a, b) =>
-    (+getComputedStyle(b).zIndex || 0) - (+getComputedStyle(a).zIndex || 0))[0];
-  const closer = modal.querySelector(
-    '[aria-label*="close" i],[title*="close" i],[class*="close" i],[data-testid*="close" i],button.close'
-  ) || [...modal.querySelectorAll('button,span,div[role=button],svg')].find(
-    el => ['\u00d7', '\u2715', '\u2716', '\u274c', 'x'].includes((el.textContent || '').trim().toLowerCase())
-  );
-  if (!closer) return { ok: false };
-  (closer.closest('button,[role=button]') || closer).click();
+    return r.width >= vw * 0.2 && r.height >= vh * 0.2
+      && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw;
+  };
+  const closerFor = (el) => el.querySelector(
+      '[aria-label*="close" i],[title*="close" i],[class*="close" i],[data-testid*="close" i],button.close'
+    ) || [...el.querySelectorAll('button,span,div[role=button],svg,i')].find(
+      n => ['\u00d7', '\u2715', '\u2716', '\u274c', 'x', 'close'].includes(
+        (n.textContent || n.getAttribute('aria-label') || '').trim().toLowerCase())
+    );
+
+  const scored = [...document.querySelectorAll('div,section,aside,dialog')]
+    .filter(looksModal)
+    .map(el => ({ el, z: +getComputedStyle(el).zIndex || 0, closer: closerFor(el) }))
+    .filter(c => c.closer)
+    .sort((a, b) => b.z - a.z);
+  if (!scored.length) return { ok: false };
+  const target = scored[0].closer;
+  (target.closest('button,[role=button]') || target).click();
   return { ok: true };
 }"""
 
@@ -574,13 +637,35 @@ def classify_gate(signals: dict[str, Any]) -> str | None:
     Kept pure so the classification can be tested without a browser.
     """
     path = str(signals.get("path") or "")
-    if signals.get("card") or signals.get("upi") or any(p in path for p in PAYMENT_PATHS):
+
+    # A real card or UPI field is decisive wherever it appears, and it is
+    # checked before anything that could wave a page through. Getting this
+    # order wrong is the one mistake here that matters: it would let an
+    # exemption for marketing pages carry a genuine card form with it.
+    if signals.get("card") or signals.get("upi"):
         return "payment"
-    if signals.get("payText"):
+
+    if any(marketing in path for marketing in _CARD_MARKETING):
+        return None  # an advert for a credit card is not a request for one
+
+    if any(p in path for p in PAYMENT_PATHS):
         return "payment"
-    if signals.get("password") or signals.get("otp") or signals.get("phone"):
-        return "login"
+    # Payment *words* are not enough on their own — they are all over a
+    # marketing page. They count only where money is plausibly moving.
+    if signals.get("payText") and any(
+        p in path for p in ("/checkout", "/book", "/review", "/pay", "/order")
+    ):
+        return "payment"
     if any(p in path for p in AUTH_PATHS):
+        return "login"
+    # A credential field only counts when signing in is what the page is
+    # asking for: inside a modal, or on a page with almost nothing else. Every
+    # travel site parks a sign-in widget in its header, and treating that as a
+    # login wall stopped a run on the flight search page.
+    has_credential = signals.get("password") or signals.get("otp") or signals.get("phone")
+    if has_credential and (
+        signals.get("credentialInModal") or int(signals.get("inputCount") or 0) <= 6
+    ):
         return "login"
     return None
 

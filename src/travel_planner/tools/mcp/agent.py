@@ -245,7 +245,24 @@ async def browse(
         # steps. The page's shape has to be compared, not just its address.
         signature = _signature(page)
         if previous is not None:
-            history.append(f"   -> {_what_changed(previous, signature)}")
+            change = _what_changed(previous, signature)
+
+            # An action that did nothing is the signature of an overlay eating
+            # the click — the model cannot see one, because from its point of
+            # view it clicked a perfectly good element and the page ignored it.
+            # Clearing it here costs nothing when there is none, and rescues a
+            # run that would otherwise spend its whole budget clicking through
+            # a promotional login panel.
+            if change.startswith("nothing changed") and (
+                closed := await control.dismiss_overlay(toolset)
+            ):
+                change = (
+                    "nothing changed, but there was a panel over the page and it has been "
+                    f"closed ({closed[:60]}). Try that again."
+                )
+                page = await _look(toolset)
+                signature = _signature(page)
+            history.append(f"   -> {change}")
         previous = signature
 
         # Checked before the model is consulted, and it overrides whatever the

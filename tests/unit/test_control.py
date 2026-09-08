@@ -219,12 +219,27 @@ def test_a_non_json_result_still_returns_something_usable():
 # --- login walls that are not password fields -----------------------------------
 
 
-def test_a_mobile_number_login_is_a_login():
+def test_a_mobile_number_login_modal_is_a_login():
     """Indian booking sites sign you in by mobile number, not a password. Asking
     only "is there a password field" missed the single most common login wall on
     every site this planner actually uses — goibibo throws a Login/Signup panel
     with a +91 box over its listing and the gate saw nothing."""
-    assert control.classify_gate({"phone": True, "path": "/hotels/hotels-in-agra-ct/"}) == "login"
+    assert (
+        control.classify_gate(
+            {"phone": True, "credentialInModal": True, "path": "/hotels/hotels-in-agra-ct/"}
+        )
+        == "login"
+    )
+
+
+def test_a_sign_in_widget_in_the_header_is_not_a_login_wall():
+    """Every travel site parks one on every page. Treating it as a wall stopped
+    a run on the flight search and reported it had reached a sign-in."""
+    assert control.classify_gate({"phone": True, "path": "/flights/", "inputCount": 63}) is None
+
+
+def test_a_page_with_almost_nothing_but_a_credential_field_is_a_login():
+    assert control.classify_gate({"password": True, "path": "/x", "inputCount": 2}) == "login"
 
 
 def test_a_payment_page_still_outranks_a_phone_login():
@@ -274,3 +289,28 @@ def test_cursor_pointer_is_found_after_the_ref_too():
         "- generic [ref=e900] [cursor=pointer]:\n  - generic [ref=e901]: Holiday Inn Agra MG Road"
     )
     assert any(e["ref"] == "e900" for e in control.interactive_elements(line))
+
+
+def test_a_credit_card_advert_is_not_a_payment_page():
+    """Every Indian travel site markets a co-branded credit card, and those
+    pages are thick with "card number", "CVV" and "net banking". A run stopped
+    on makemytrip.com/cards/makemytrip-icici-bank-credit-card and reported it
+    had reached the payment page."""
+    assert control.classify_gate({"path": "/cards/mmt-icici-credit-card", "payText": True}) is None
+
+
+def test_a_real_card_field_stops_it_wherever_it_appears():
+    """Checked before the marketing exemption, deliberately. Getting that order
+    wrong would let the exemption carry a genuine card form through with it."""
+    assert control.classify_gate({"path": "/offers/", "card": True}) == "payment"
+    assert control.classify_gate({"path": "/cards/x", "upi": True}) == "payment"
+
+
+def test_payment_words_alone_are_not_enough():
+    """A listing page that mentions net banking in a bank offer is not a
+    checkout."""
+    assert control.classify_gate({"path": "/hotels/hotels-in-agra-ct/", "payText": True}) is None
+
+
+def test_a_booking_path_is_a_payment_page():
+    assert control.classify_gate({"path": "/hotels/nhotel-booking/"}) == "payment"

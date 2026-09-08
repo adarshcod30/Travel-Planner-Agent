@@ -369,6 +369,7 @@ async def proceed_toward_booking(
     checkout: date,
     travelers: int,
     listing_url: str | None = None,
+    fallback_urls: list[str] | None = None,
     settings: Settings | None = None,
 ) -> dict[str, Any]:
     """Carry on from a list of prices to the point a person has to take over.
@@ -389,60 +390,62 @@ async def proceed_toward_booking(
         f"{checkin.strftime('%-d %B')} to {checkout.strftime('%-d %B %Y')}, "
         f"{travelers} adults. Open a named hotel from the list — one whose name you can "
         "see, not a filter — and begin booking a room: choose the room and press whatever "
-        "continues to the next step. Stop as soon as the site asks anyone to sign in, "
-        "enter personal details, or pay. Do not fill in any of those."
+        "continues to the next step.\n"
+        "Stay on hotel and booking pages. Never open account, support, trips, offers or "
+        "credit-card pages — those are not part of booking a room and there is no way "
+        "back to the search from them.\n"
+        "Stop as soon as the site asks anyone to sign in, enter personal details, or pay. "
+        "Do not fill in any of those."
     )
 
-    # Two attempts, because the first is the one that lands on a listing still
-    # settling and spends its budget on filters. A second run from a fresh load
-    # is cheap next to reporting a dead end to someone who asked to book.
-    outcome = await agent.browse(
-        toolset,
-        goal,
-        thread_id=thread_id,
-        # Back to the listing first. The pass that found the prices left the
-        # browser wherever it finished, and starting from a half-scrolled page
-        # with stale refs is how this failed the first time it was tried.
-        start_url=listing_url,
-        max_steps=settings.browser_agent_max_steps,
-        budget_seconds=settings.browser_agent_budget_seconds,
-        settings=settings,
-    )
+    # More than one listing, because the sites do not parse equally well and
+    # the one that answered first with prices is not necessarily the one whose
+    # cards a browsing agent can read — goibibo's are named divs, agoda's are
+    # built out of image alt text. Same chain-of-targets shape as everywhere
+    # else here, for the same reason: any single site is a coin toss.
+    seen: set[str] = set()
+    ordered = [
+        u for u in [listing_url, *(fallback_urls or [])] if u and not (u in seen or seen.add(u))
+    ]
+    if not ordered:
+        return {"reached": None, "handed_over": None, "url": None, "why": "no listing to open"}
 
-    page = await control.read_page(toolset)
-    reason = outcome.needs_person or page.get("needs_person")
-
-    if not reason and listing_url:
-        log.info("booking_retry", why=outcome.reason[:120])
-        events.phase("booking", "trying the booking once more from a fresh load")
+    last = "no listing led anywhere"
+    for attempt, url in enumerate(ordered, start=1):
         outcome = await agent.browse(
             toolset,
             goal,
             thread_id=thread_id,
-            start_url=listing_url,
+            # Back to a listing first: the pass that found the prices left the
+            # browser wherever it happened to finish.
+            start_url=url,
             max_steps=settings.browser_agent_max_steps,
             budget_seconds=settings.browser_agent_budget_seconds,
-            settle_seconds=10.0,
+            # A listing takes about nine seconds to render its cards; below
+            # that the agent sees only filters and spends its budget on them.
+            settle_seconds=9.0 if attempt == 1 else 11.0,
             settings=settings,
         )
         page = await control.read_page(toolset)
         reason = outcome.needs_person or page.get("needs_person")
+        last = outcome.reason
 
-    if reason:
-        handed = await _hand_over(toolset, thread_id, reason, page, settings)
-        return {
-            "reached": reason,
-            "handed_over": handed,
-            "url": page.get("url"),
-            "steps": outcome.steps,
-        }
-    return {
-        "reached": None,
-        "handed_over": None,
-        "url": page.get("url"),
-        "steps": outcome.steps,
-        "why": outcome.reason,
-    }
+        if reason:
+            handed = await _hand_over(toolset, thread_id, reason, page, settings)
+            return {
+                "reached": reason,
+                "handed_over": handed,
+                "url": page.get("url"),
+                "steps": outcome.steps,
+                "listing": url,
+            }
+
+        log.info("booking_continuation_failed", attempt=attempt, why=outcome.reason[:120])
+        events.phase(
+            "booking", f"that listing led nowhere ({attempt} of {len(ordered)}); trying another"
+        )
+
+    return {"reached": None, "handed_over": None, "url": None, "why": last}
 
 
 async def open_booking(
@@ -520,6 +523,9 @@ async def open_booking(
                     toolset,
                     thread_id=thread_id,
                     listing_url=url,
+                    # Everything else that was reachable, so a site whose
+                    # cards this cannot read does not end the attempt.
+                    fallback_urls=[u for _, u in targets if u != url],
                     city=city,
                     checkin=checkin,  # type: ignore[arg-type]
                     checkout=checkout,  # type: ignore[arg-type]

@@ -37,7 +37,8 @@ if [[ -d data/runs ]]; then
 fi
 
 if [[ "${1:-}" == "--all" ]]; then
-  echo "== Dependencies (re-create with 'uv sync' and 'npm ci')"
+  echo "== Dependencies"
+  echo "   rebuild: uv sync --extra dev --extra server --extra mcp && npm --prefix frontend ci"
   drop .venv
   drop frontend/node_modules
   drop frontend/.next

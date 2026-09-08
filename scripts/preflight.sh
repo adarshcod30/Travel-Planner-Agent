@@ -31,6 +31,22 @@ else
   bad "uv cannot run Python" "install uv: https://docs.astral.sh/uv/"
 fi
 
+# `uv sync` alone installs neither the server nor the test tooling — both are
+# optional extras, deliberately, so the graphs can be imported without pulling
+# in Postgres drivers. The failure mode without this check is `run_all.sh`
+# ending in "Failed to spawn: aegra", which reads like a PATH problem.
+if uv run python -c 'import aegra_api' >/dev/null 2>&1; then
+  ok "Aegra is installed"
+else
+  bad "Aegra is not installed" "uv sync --extra dev --extra server --extra mcp"
+fi
+
+if uv run python -c 'import travel_mcp' >/dev/null 2>&1; then
+  ok "travel-mcp is installed"
+else
+  soft "travel-mcp is not installed" "uv sync --extra mcp — v5 loses the Indian travel reference tools"
+fi
+
 for tool in node npm; do
   if command -v "$tool" >/dev/null; then ok "$(command -v "$tool") ($($tool --version))"
   else bad "$tool is missing" "install Node 22 or newer"; fi

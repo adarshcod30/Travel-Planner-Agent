@@ -775,7 +775,10 @@ trips have **0 thread rows and 0 checkpoints**.
 # 1. Clone and install Python dependencies (creates .venv)
 git clone https://github.com/adarshcod30/Travel-Planner-Agent
 cd Travel-Planner-Agent
-uv sync
+# The extras are not optional in practice: `server` is Aegra itself, `mcp` is
+# the travel reference server, `dev` is the test tooling. They are declared
+# optional so the graphs can be imported without a Postgres driver.
+uv sync --extra dev --extra server --extra mcp
 
 # 2. Configure — add your AWS keys, or set AWS_PROFILE
 cp .env.example .env

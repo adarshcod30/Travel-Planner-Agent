@@ -46,7 +46,7 @@ sudo chown -R travelplanner:travelplanner /opt/travel-planner
 ```bash
 cd /opt/travel-planner
 sudo -u travelplanner cp .env.example .env      # then fill in the AWS keys
-sudo -u travelplanner uv sync
+sudo -u travelplanner uv sync --extra dev --extra server --extra mcp
 sudo -u travelplanner ./scripts/bootstrap_postgres.sh
 sudo -u travelplanner bash -c 'cd frontend && npm ci && npm run build'
 ```
@@ -218,7 +218,7 @@ journalctl -u travel-planner-web -f
 ```bash
 cd /opt/travel-planner
 sudo -u travelplanner git pull
-sudo -u travelplanner uv sync
+sudo -u travelplanner uv sync --extra dev --extra server --extra mcp
 sudo -u travelplanner uv run aegra db upgrade
 sudo -u travelplanner bash -c 'cd frontend && npm ci && npm run build'
 sudo systemctl restart travel-planner-aegra travel-planner-web

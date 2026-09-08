@@ -31,7 +31,7 @@ from urllib.parse import quote, urlsplit
 from travel_planner.core import events
 from travel_planner.core.config import Settings, get_settings
 from travel_planner.core.logging import get_logger
-from travel_planner.tools.mcp import control, handover
+from travel_planner.tools.mcp import agent, control, handover
 from travel_planner.tools.mcp.browser import looks_blocked, snapshot_body
 from travel_planner.tools.mcp.client import McpToolset
 
@@ -294,12 +294,83 @@ def extract_prices(snapshot: str, limit: int = 12) -> list[dict[str, str]]:
 # ---------------------------------------------------------------------------
 
 
+def stay_goal(city: str, checkin: date, checkout: date, travelers: int) -> str:
+    """What the browsing agent is actually trying to achieve.
+
+    Written as an instruction to a person, with the finish line stated
+    explicitly — "prices per night are visible" is checkable from the page,
+    where "find a hotel" is not, and a goal a model cannot tell it has reached
+    is a goal it browses past.
+    """
+    nights = (checkout - checkin).days
+    return (
+        f"Search for hotels in {city} for {checkin.strftime('%-d %B %Y')} to "
+        f"{checkout.strftime('%-d %B %Y')} ({nights} nights) for {travelers} adults. "
+        "You are finished the moment a list of hotels with prices per night is on screen. "
+        "Do not open an individual hotel and do not start a booking."
+    )
+
+
+async def search_by_hand(
+    toolset: McpToolset,
+    *,
+    thread_id: str,
+    city: str,
+    checkin: date,
+    checkout: date,
+    travelers: int,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    """Drive a booking site the way a person would, rather than by URL.
+
+    A crafted URL is one guess that either works or does not, and it stops
+    working the week a site changes its routing. This fills the site's own
+    search form — which is slower, and survives the change.
+    """
+    settings = settings or get_settings()
+    for label, home in (
+        ("goibibo", "https://www.goibibo.com/hotels/"),
+        ("makemytrip", "https://www.makemytrip.com/hotels/"),
+    ):
+        events.phase("booking", f"searching {label} by hand")
+        outcome = await agent.browse(
+            toolset,
+            stay_goal(city, checkin, checkout, travelers),
+            thread_id=thread_id,
+            start_url=home,
+            max_steps=settings.browser_agent_max_steps,
+            budget_seconds=settings.browser_agent_budget_seconds,
+            settings=settings,
+        )
+        page = await control.read_page(toolset)
+        prices = extract_prices(page.get("snapshot", ""))
+
+        if outcome.needs_person:
+            handed = await _hand_over(toolset, thread_id, outcome.needs_person, page, settings)
+            if handed == "released":
+                page = await control.read_page(toolset)
+                prices = extract_prices(page.get("snapshot", ""))
+            return _report(label, outcome.url or home, page, [], handed_over=handed, prices=prices)
+
+        if prices:
+            return _report(label, outcome.url or home, page, [], handed_over=None, prices=prices)
+
+        log.info("booking_agent_no_prices", site=label, reason=outcome.reason[:120])
+
+    return {}
+
+
 async def open_booking(
     toolset: McpToolset,
     *,
     thread_id: str,
     targets: list[tuple[str, str]],
     settings: Settings | None = None,
+    city: str = "",
+    checkin: date | None = None,
+    checkout: date | None = None,
+    travelers: int = 2,
+    by_hand: bool = True,
 ) -> dict[str, Any]:
     """Walk the targets until one shows live prices or asks for a person.
 
@@ -308,6 +379,7 @@ async def open_booking(
     browser is open on the last one, it is yours".
     """
     settings = settings or get_settings()
+    by_hand = by_hand and bool(city and checkin and checkout)
     attempts: list[dict[str, str]] = []
     #: The best page that actually rendered. A site can load perfectly and
     #: still show no prices — its search form, with the city and dates already
@@ -364,6 +436,24 @@ async def open_booking(
     # Nothing quoted a price, but something loaded. Rather than reporting a
     # dead end, put the person in front of it — the search is already set up,
     # and finishing it is a click they can make and the automation cannot.
+    # Every crafted URL missed. Before giving up, do it the way a person would
+    # — open the site and fill its own search form. Slower, and it survives the
+    # week a site changes its routing.
+    if by_hand:
+        events.phase("booking", "no URL worked; searching the site by hand")
+        agent_result = await search_by_hand(
+            toolset,
+            thread_id=thread_id,
+            city=city,
+            checkin=checkin,
+            checkout=checkout,
+            travelers=travelers,
+            settings=settings,
+        )
+        if agent_result:
+            agent_result["attempts"] = attempts + agent_result.get("attempts", [])
+            return agent_result
+
     if landed is not None:
         label, url, page = landed
         events.phase("booking", f"{label} loaded but quoted nothing — offering you the browser")

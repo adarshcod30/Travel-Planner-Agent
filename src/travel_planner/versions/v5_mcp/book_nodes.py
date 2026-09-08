@@ -103,6 +103,12 @@ def make_book_node(settings: Settings | None = None):
                 thread_id=thread_id,
                 targets=booking.stay_targets(city, checkin, checkout, state.get("travelers") or 1),
                 settings=cfg,
+                # Enough to fall back to driving the site's own search form
+                # when no crafted URL carries the search through.
+                city=city,
+                checkin=checkin,
+                checkout=checkout,
+                travelers=state.get("travelers") or 1,
             )
 
         log.info("booking_finished", site=result.get("site"), ok=result.get("ok"))

@@ -101,6 +101,13 @@ class Settings(BaseSettings):
     # not something a deployment should start doing without being told to.
     booking_enabled: bool = True
 
+    # How far a browsing agent may go before giving up. A hotel search is
+    # legitimately a dozen actions — open the destination field, type, pick the
+    # suggestion, open check-in, pick a day, open check-out, pick a day, search
+    # — so a small budget here does not fail fast, it fails always.
+    browser_agent_max_steps: int = 22
+    browser_agent_budget_seconds: float = 300.0
+
     playwright_mcp_url: str = "http://localhost:8931/mcp"
 
     # Headed, and not only because v5 is meant to be watched.

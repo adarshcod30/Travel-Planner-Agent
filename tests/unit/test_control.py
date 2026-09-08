@@ -78,8 +78,53 @@ def test_interactive_elements_are_the_ones_worth_clicking():
     by_ref = {e["ref"]: e for e in els}
     assert by_ref["e24"] == {"ref": "e24", "role": "searchbox", "name": "Search Wikivoyage"}
     assert by_ref["e51"]["role"] == "combobox"
-    # The tree is mostly generic containers; listing them would bury the rest.
-    assert not any(e["role"] in ("generic", "banner", "paragraph") for e in els)
+    # Unnamed containers are still dropped: there is nothing a model could say
+    # about "generic [ref=e39]" that would help it decide anything.
+    assert not any(e["name"] == "" and e["role"] == "generic" for e in els)
+
+
+GOIBIBO = """### Snapshot
+```yaml
+- link "Flights" [ref=e12]
+- link "Hotels" [ref=e17]
+- link "Hotels in Delhi" [ref=e403]
+- generic [ref=e72]: Where to
+- generic [ref=e77]: Check-in
+- generic [ref=e83]: Check-out
+- generic [ref=e91]: SEARCH
+- generic [ref=e400]: Get Up to 15% OFF on Travel Bookings and more besides
+- paragraph [ref=e133]: Some marketing copy
+```
+"""
+
+
+def test_a_search_widget_built_from_divs_is_still_offered():
+    """goibibo's "Where to" field is not an input — it renders as
+    `generic [ref=e72]: Where to`, and so do its dates and its SEARCH button.
+    Excluding generics made the one thing that page exists for invisible, and a
+    browsing loop given that page could only click the nav bar over and over."""
+    names = {e["name"] for e in control.interactive_elements(GOIBIBO)}
+    assert {"Where to", "Check-in", "Check-out", "SEARCH"} <= names
+
+
+def test_the_search_widget_outranks_the_nav_bar():
+    """A page's first forty elements are routinely a nav bar, so in document
+    order the useful half never survives truncation."""
+    top = [e["name"] for e in control.interactive_elements(GOIBIBO, limit=4)]
+    assert "Where to" in top and "SEARCH" in top
+    assert "Flights" not in top
+
+
+def test_long_marketing_text_is_not_mistaken_for_a_control():
+    """A control's label is short. A paragraph is not a button."""
+    names = {e["name"] for e in control.interactive_elements(GOIBIBO)}
+    assert not any(n.startswith("Get Up to 15% OFF") for n in names)
+
+
+def test_a_named_link_still_appears_just_lower_down():
+    names = [e["name"] for e in control.interactive_elements(GOIBIBO, limit=40)]
+    assert "Flights" in names
+    assert names.index("Where to") < names.index("Flights")
 
 
 def test_interactive_elements_are_capped():

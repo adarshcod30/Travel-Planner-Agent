@@ -114,20 +114,21 @@ class Action:
 # ---------------------------------------------------------------------------
 
 _REF_LINE = re.compile(
-    r"^\s*-\s+(?P<role>[a-z]+)"  # role, e.g. button / link / textbox
-    r'(?:\s+"(?P<name>[^"]*)")?'  # optional accessible name
+    r"^\s*-\s+(?P<role>[a-z]+)"  # role, e.g. button / link / generic
+    r'(?:\s+"(?P<name>[^"]*)")?'  # accessible name, when it has one
     # Any number of bracketed attributes may sit between the name and the ref
-    # — `[active]`, `[checked]`, `[expanded]`, `[cursor=pointer]`. Excluding
-    # "[" here instead was a real bug: Google's search box renders as
+    # — `[active]`, `[checked]`, `[cursor=pointer]`. Excluding "[" here instead
+    # was a real bug: Google's search box renders as
     # `combobox "Search" [active] [ref=e40]`, so the one element a person most
     # wants to click was the one element the takeover panel could not see.
-    r"(?:\s*\[[^\]]*\])*?"
+    r"(?P<attrs>(?:\s*\[[^\]]*\])*?)"
     # Refs inside an iframe carry a frame prefix: `f4e19`, not `e19`.
-    r"\s*\[ref=(?P<ref>[a-z]*\d*e\d+)\]",
+    r"\s*\[ref=(?P<ref>[a-z]*\d*e\d+)\]"
+    # Text content sits after the colon: `- generic [ref=e72]: Where to`.
+    r"\s*:?\s*(?P<text>.*)$"
 )
 
-#: Roles a person can meaningfully act on. The tree is mostly `generic`
-#: containers; listing those would bury the six things worth clicking.
+#: Roles that are unambiguously worth acting on.
 ACTIONABLE_ROLES = (
     "button",
     "link",
@@ -141,30 +142,114 @@ ACTIONABLE_ROLES = (
     "tab",
     "switch",
     "slider",
+    "spinbutton",
+)
+
+#: Roles that are usually containers — and sometimes the entire search widget.
+#:
+#: goibibo's "Where to" field is not an input. It renders as
+#: `generic [ref=e72]: Where to`, a div with a click handler, and so do its
+#: date fields and its SEARCH button. Excluding generics made the one thing
+#: that page exists for invisible, and a browsing loop given that page could
+#: only click the nav bar over and over — which is exactly what it did.
+_CONTAINER_ROLES = ("generic", "paragraph", "heading", "listitem", "cell", "img", "image")
+
+#: Words that mark a container as part of a search or booking widget. Short
+#: label text on a div is the shape those widgets take.
+_WIDGET_WORDS = (
+    "search",
+    "where",
+    "check-in",
+    "check in",
+    "checkout",
+    "check-out",
+    "guest",
+    "room",
+    "adult",
+    "child",
+    "date",
+    "depart",
+    "return",
+    "book",
+    "select",
+    "continue",
+    "apply",
+    "done",
+    "next",
+    "submit",
+    "login",
+    "sign in",
+    "accept",
+    "agree",
+    "close",
+    "dismiss",
+    "got it",
+    "price",
+    "night",
+    "view",
 )
 
 
-def interactive_elements(snapshot: str, limit: int = 60) -> list[dict[str, str]]:
-    """The things on the page someone could click or type into.
+def _score(role: str, name: str, clickable: bool) -> int:
+    """How likely this element is to be the thing you want to act on.
+
+    Ranking rather than filtering, because a page's most important control is
+    routinely a div and its first forty elements are routinely a nav bar. In
+    document order the useful half never survives truncation.
+    """
+    lowered = name.lower()
+    if role in ("textbox", "searchbox", "combobox", "spinbutton"):
+        return 100
+    if role == "button" and name:
+        return 90 if any(w in lowered for w in _WIDGET_WORDS) else 70
+    if clickable and any(w in lowered for w in _WIDGET_WORDS):
+        return 85
+    if role in _CONTAINER_ROLES and name and len(name) < 40:
+        return 80 if any(w in lowered for w in _WIDGET_WORDS) else 20
+    if role in ("checkbox", "radio", "option", "tab", "menuitem", "switch", "slider"):
+        return 60
+    if clickable:
+        return 40
+    if role == "link" and name:
+        return 30
+    return 0
+
+
+def interactive_elements(snapshot: str, limit: int = 40) -> list[dict[str, str]]:
+    """The things on the page worth clicking or typing into, best first.
 
     Parsed from the snapshot rather than fetched separately, because the
     snapshot is already taken and a second round trip would describe a page
     that may have moved on.
     """
-    out: list[dict[str, str]] = []
+    found: list[tuple[int, int, dict[str, str]]] = []
     seen: set[str] = set()
-    for line in snapshot_body(snapshot).splitlines():
+
+    for order, line in enumerate(snapshot_body(snapshot).splitlines()):
         m = _REF_LINE.match(line)
-        if not m or m["role"] not in ACTIONABLE_ROLES:
+        if not m:
             continue
         ref = m["ref"]
         if ref in seen:
             continue
+
+        role = m["role"]
+        name = (m["name"] or m["text"] or "").strip().strip(":").strip()
+        clickable = "cursor=pointer" in (m["attrs"] or "")
+
+        score = _score(role, name, clickable)
+        if score <= 0:
+            continue
+        # An unnamed link is nothing a model can reason about; an unnamed input
+        # still is, because its role says what it is for.
+        if not name and role not in ("textbox", "searchbox", "combobox"):
+            continue
+
         seen.add(ref)
-        out.append({"ref": ref, "role": m["role"], "name": (m["name"] or "").strip()})
-        if len(out) >= limit:
-            break
-    return out
+        found.append((-score, order, {"ref": ref, "role": role, "name": name[:90]}))
+
+    found.sort(key=lambda x: (x[0], x[1]))
+    return [item for _, _, item in found[:limit]]
 
 
 def page_url(snapshot: str) -> str | None:
@@ -247,6 +332,112 @@ async def page_gate(toolset: McpToolset, timeout: float = DEFAULT_TIMEOUT) -> st
         log.debug("gate_check_failed", error=f"{type(exc).__name__}: {str(exc)[:120]}")
         return None
     return classify_gate(signals)
+
+
+# ---------------------------------------------------------------------------
+# Tabs
+# ---------------------------------------------------------------------------
+#
+# Search results and booking sites open things in new tabs constantly, and a
+# tab that opens is almost always the thing you just asked for. Ignoring that
+# leaves you reading the page you clicked *from* — which looks like the click
+# silently failed, or worse, like it went somewhere else entirely.
+
+_TAB_LINE = re.compile(
+    r"^\s*-\s+(?P<index>\d+):\s*(?P<current>\(current\)\s*)?\[(?P<title>[^\]]*)\]\((?P<url>[^)]*)\)"
+)
+
+
+def parse_tabs(listing: str) -> list[dict[str, Any]]:
+    """The open tabs, as Playwright describes them."""
+    out: list[dict[str, Any]] = []
+    for line in listing.splitlines():
+        m = _TAB_LINE.match(line)
+        if m:
+            out.append(
+                {
+                    "index": int(m["index"]),
+                    "current": bool(m["current"]),
+                    "title": m["title"],
+                    "url": m["url"],
+                }
+            )
+    return out
+
+
+async def list_tabs(toolset: McpToolset, timeout: float = DEFAULT_TIMEOUT) -> list[dict[str, Any]]:
+    tool = toolset.get("browser_tabs")
+    if tool is None:
+        return []
+    try:
+        return parse_tabs(
+            mcp_text(await asyncio.wait_for(tool.ainvoke({"action": "list"}), timeout=timeout))
+        )
+    except Exception as exc:
+        log.debug("tabs_list_failed", error=f"{type(exc).__name__}: {str(exc)[:120]}")
+        return []
+
+
+async def select_tab(toolset: McpToolset, index: int, timeout: float = DEFAULT_TIMEOUT) -> bool:
+    tool = toolset.get("browser_tabs")
+    if tool is None:
+        return False
+    try:
+        await asyncio.wait_for(tool.ainvoke({"action": "select", "index": index}), timeout=timeout)
+        return True
+    except Exception as exc:
+        log.debug("tab_select_failed", index=index, error=type(exc).__name__)
+        return False
+
+
+async def close_tab(
+    toolset: McpToolset, index: int | None = None, timeout: float = DEFAULT_TIMEOUT
+) -> bool:
+    tool = toolset.get("browser_tabs")
+    if tool is None:
+        return False
+    args: dict[str, Any] = {"action": "close"}
+    if index is not None:
+        args["index"] = index
+    try:
+        await asyncio.wait_for(tool.ainvoke(args), timeout=timeout)
+        return True
+    except Exception as exc:
+        log.debug("tab_close_failed", index=index, error=type(exc).__name__)
+        return False
+
+
+async def follow_new_tab(
+    toolset: McpToolset, before: list[dict[str, Any]], timeout: float = DEFAULT_TIMEOUT
+) -> dict[str, Any] | None:
+    """If an action opened a tab, move to it. Returns the tab moved to.
+
+    Compared by index rather than by count: a click can close one tab and open
+    another in the same step, which leaves the count unchanged and the content
+    completely different.
+    """
+    after = await list_tabs(toolset, timeout)
+    known = {tab["index"] for tab in before}
+    fresh = [tab for tab in after if tab["index"] not in known]
+    if not fresh:
+        return None
+    target = fresh[-1]
+    if await select_tab(toolset, target["index"], timeout):
+        events.browser_action("switch tab", detail=target["title"][:80] or target["url"][:80])
+        return target
+    return None
+
+
+async def page_url_now(toolset: McpToolset, timeout: float = DEFAULT_TIMEOUT) -> str | None:
+    """Just the address, without paying for a whole accessibility tree.
+
+    Used after every action to answer "did anything happen", which is the one
+    thing a browsing loop most needs to know and cannot infer.
+    """
+    for tab in await list_tabs(toolset, timeout):
+        if tab["current"]:
+            return str(tab["url"])
+    return None
 
 
 async def read_page(toolset: McpToolset, timeout: float = DEFAULT_TIMEOUT) -> dict[str, Any]:

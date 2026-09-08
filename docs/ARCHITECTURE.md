@@ -187,13 +187,37 @@ filter rather than a regex.
 
 ## Testing
 
-324 tests run without credentials or network, and without a `.env` —
-the model IDs have defaults so the suite is hermetic rather than passing only
-on a machine that happens to be configured. The graph tests drive the *real*
-compiled graphs with a scripted stand-in for the model layer, so topology,
-routing, the revision loop, the iteration ceiling and the full interrupt/resume
-cycle are all exercised against the code that ships.
+Three tiers, and the boundary between them is what each needs to be true
+rather than how fast it is.
 
-A separate opt-in live suite checks structured-output conformance against real
-Bedrock, and asserts no escalation occurred — so an agent that only passes
-because the safety net caught it fails rather than quietly costing more.
+**Hermetic — 631 tests.** No credentials, no network, no `.env`; the model IDs
+have defaults so the suite is hermetic rather than passing only on a machine
+that happens to be configured. The graph tests drive the *real* compiled graphs
+with a scripted stand-in for the model layer, so topology, routing, the revision
+loop, the iteration ceiling and the full interrupt/resume cycle are exercised
+against the code that ships.
+
+**Serving — 18 tests.** The tier above compiles graphs with an in-memory
+checkpointer and calls them directly. That is what makes it fast, and it is also
+why 631 passing tests said nothing about Aegra: the manifest wiring, assistant
+registration, the injected Postgres checkpointer and the custom routes were
+covered by nothing. This tier boots a real server against a real Postgres and
+checks precisely those. Two things about it are deliberate:
+
+- **It spends nothing.** State is written directly through
+  `POST /threads/{id}/state` rather than produced by a run, so persistence is
+  tested without paying a model to generate something to persist. A thread is
+  created with `graph_id` in its metadata, which is what lets Aegra validate
+  state against a schema before any run exists.
+- **`tests/unit/test_aegra_loading.py` binds to Aegra's internals on purpose.**
+  `_base_graph_cache` and `_graph_factories` are private, and an upgrade that
+  renames them will fail the suite. That is the intent: v5's per-run browser and
+  MCP lifetime depend on Aegra *not* caching factory graphs, and an upgrade that
+  quietly started caching them would surface as a browser bug three layers down
+  rather than as a failing test.
+
+**Live — 20 tests.** Structured-output conformance against real Bedrock, per
+agent, per tier — asserting no escalation occurred, so an agent that only passes
+because the safety net caught it fails rather than quietly costing more. One of
+them is also an integration test: a real run driven over the protocol, proving a
+graph executes through the serving layer rather than beside it.

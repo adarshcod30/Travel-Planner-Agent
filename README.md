@@ -605,19 +605,37 @@ up. Runs past the cap queue for a slot rather than launching another Chrome.
 
 ## Testing
 
+Three tiers, separated by what each one needs to be true.
+
 ```bash
-uv run pytest -m "not live"     # 617 tests, no credentials, no network
-uv run pytest -m live           # 19 opt-in tests; spends real Bedrock calls
-uv run ruff check . && uv run ruff format --check .
+uv run pytest -m "not live and not integration"   # 631 — no credentials, no network
+uv run pytest -m "integration and not live"       # 18  — needs a running server
+uv run pytest -m live                             # 20  — spends real Bedrock calls
+uv run ruff check . && uv run ruff format --check . && uv run mypy src
 ```
 
-The unit suite runs with every model call scripted, so a graph's topology,
-routing and state handling are tested without a network. The live suite is
-opt-in: it puts every agent's schema in front of the real Nova tier it is
-assigned to, which is the one thing a mock cannot tell you. The table at the top
-of this file comes from `scripts/measure_versions.py`, not from either suite.
+**Hermetic (631).** Every model call is scripted, so a graph's topology, routing
+and state handling are tested with no network and no account. This is the tier
+that runs on every push.
 
-Ten of them are tests of the **repository** rather than the product, because
+**Serving (18).** The half the hermetic tier cannot reach. Those 631 tests
+compile the graphs with an in-memory checkpointer and call them directly — which
+is exactly why they are fast, and exactly why they say nothing about Aegra. This
+tier boots a real server against a real Postgres and checks the things only a
+server has: the manifest wiring, assistant registration at derived ids, the
+checkpointer Aegra injects into graphs that never construct one, and the custom
+routes on the same port. It spends nothing — state is written directly rather
+than generated, so persistence is tested without paying a model to produce
+something to persist. CI runs it in its own job with a Postgres service.
+
+**Live (20).** Every agent's schema in front of the real Nova tier it is
+assigned to, which is the one thing a mock cannot tell you. Opt-in, and the only
+tier that costs money.
+
+The table at the top of this file comes from `scripts/measure_versions.py`, not
+from any of them.
+
+Ten more are tests of the **repository** rather than the product, because
 each thing they check has already gone wrong once: a tooling directory reaching
 a commit, a credential-bearing file one careless `git add` away, Next 16
 quietly writing an instruction file into the tree on every `npm run dev`, and
@@ -658,7 +676,7 @@ mean hand-aligned `=` signs get collapsed.
 ├── deploy/systemd/               three units for a shared host
 ├── scripts/                      preflight, postgres bootstrap, aegra runner, LAN serving,
 │                                 measure_versions.py (the table at the top)
-├── tests/                        unit + opt-in live suites
+├── tests/                        hermetic · serving (needs a server) · live (costs money)
 └── docs/                         architecture, versions, deployment, models, intranet,
                                   and the two plans this was built from
 ```

@@ -74,3 +74,70 @@ jobs:
         run: npm run build
         env:
           AEGRA_URL: http://127.0.0.1:2026
+
+  # The serving layer. Everything in the `backend` job runs the graphs directly
+  # with an in-memory checkpointer, which is what makes it fast and hermetic —
+  # and also means it proves nothing about Aegra. This job boots a real server
+  # against a real Postgres and exercises the parts only a server has: the
+  # manifest wiring, assistant registration at derived ids, the checkpointer
+  # Aegra injects into graphs that never construct one, and the custom routes
+  # mounted on the same port.
+  #
+  # No AWS credentials here, so no graph is ever run — the `live` mark covers
+  # the one test that would, and it stays excluded.
+  serving:
+    name: Serving layer
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: travel_planner
+          POSTGRES_PASSWORD: travel_planner
+          POSTGRES_DB: travel_planner
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://travel_planner:travel_planner@localhost:5432/travel_planner
+      AEGRA_URL: http://127.0.0.1:2026
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra server --extra mcp
+
+      - name: Apply migrations
+        run: uv run aegra db upgrade
+
+      - name: Start Aegra
+        run: |
+          uv run aegra serve --host 127.0.0.1 --port 2026 > aegra.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS -H "Authorization: Bearer local-dev" http://127.0.0.1:2026/info >/dev/null 2>&1; then
+              echo "server up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not start"; cat aegra.log; exit 1
+
+      - name: Integration tests
+        run: uv run pytest -m "integration and not live" -q
+
+      # The log is the only way to see why a boot failed on someone else's
+      # runner, so keep it when the job goes red.
+      - name: Server log
+        if: failure()
+        run: cat aegra.log

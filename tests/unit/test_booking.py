@@ -63,9 +63,44 @@ def test_night_counts_are_clamped(days, expected):
 
 def test_indian_aggregators_lead_the_chain():
     """They are what a traveller here books through, and they quote rupees
-    natively — so nothing sits between the plan's budget and the real price."""
+    natively — so nothing sits between the plan's budget and the real price.
+
+    goibibo leads makemytrip because it is the one that actually answers: on a
+    live run it returns twelve room rates where makemytrip serves a listing
+    page that quotes nothing to an automated browser."""
     targets = booking.stay_targets("Jaipur, India", date(2026, 11, 8), date(2026, 11, 11), 2)
-    assert [t[0] for t in targets][:2] == ["makemytrip", "goibibo"]
+    assert [t[0] for t in targets][:2] == ["goibibo", "makemytrip"]
+
+
+def test_agoda_is_addressed_by_path_not_by_query():
+    """`/search?city=Agra` bounces to the home page; `/city/agra-in.html`
+    shows rooms."""
+    url = dict(booking.stay_targets("Agra, India", date(2026, 11, 8), date(2026, 11, 11), 2))[
+        "agoda"
+    ]
+    assert "/city/agra-in.html" in url and "checkIn=2026-11-08" in url
+
+
+def test_agoda_uses_the_right_country_for_the_destination():
+    urls = dict(booking.stay_targets("Kathmandu, Nepal", date(2026, 11, 8), date(2026, 11, 11), 1))
+    assert "/city/kathmandu-np.html" in urls["agoda"]
+
+
+def test_an_unlisted_country_falls_back_to_india():
+    """Where the overwhelming majority of these trips go."""
+    urls = dict(
+        booking.stay_targets("Reykjavik, Iceland", date(2026, 11, 8), date(2026, 11, 11), 1)
+    )
+    assert "-in.html" in urls["agoda"]
+
+
+def test_booking_com_sends_a_complete_search():
+    """Without no_rooms and group_children it serves an empty results page and
+    fills the rest in from a cookie."""
+    url = dict(booking.stay_targets("Agra, India", date(2026, 11, 8), date(2026, 11, 11), 2))[
+        "booking.com"
+    ]
+    assert "no_rooms=1" in url and "group_children=0" in url and "group_adults=2" in url
 
 
 def test_the_search_carries_the_real_dates():

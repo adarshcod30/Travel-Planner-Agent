@@ -105,6 +105,33 @@ def _slug(city: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", city.split(",")[0].strip().lower()).strip("-")
 
 
+#: Agoda addresses cities by country-suffixed path, not by search query — a
+#: `/search?city=Agra` link bounces to the home page, while
+#: `/city/agra-in.html` shows real rooms. Only the destinations this planner
+#: actually reaches are worth listing; anything else falls back to India, which
+#: is where the overwhelming majority of these trips go.
+_AGODA_COUNTRY = {
+    "india": "in",
+    "nepal": "np",
+    "sri lanka": "lk",
+    "bhutan": "bt",
+    "thailand": "th",
+    "singapore": "sg",
+    "malaysia": "my",
+    "indonesia": "id",
+    "vietnam": "vn",
+    "united arab emirates": "ae",
+    "uae": "ae",
+    "japan": "jp",
+}
+
+
+def _country_code(city: str) -> str:
+    """The two-letter code Agoda expects, from a "City, Country" string."""
+    parts = [p.strip().lower() for p in city.split(",")]
+    return _AGODA_COUNTRY.get(parts[-1], "in") if len(parts) > 1 else "in"
+
+
 def stay_targets(city: str, checkin: date, checkout: date, travelers: int) -> list[tuple[str, str]]:
     """Booking pages to try, in order, for a place to stay.
 
@@ -113,22 +140,36 @@ def stay_targets(city: str, checkin: date, checkout: date, travelers: int) -> li
     plan's budget and the real price.
     """
     slug = _slug(city)
+    adults = max(1, travelers)
     mmt_in, mmt_out = (d.strftime("%m%d%Y") for d in (checkin, checkout))
     iso_in, iso_out = (d.isoformat() for d in (checkin, checkout))
-    rooms = f"{max(1, travelers)}e0e"
+    rooms = f"{adults}e0e"
     return [
+        (
+            "goibibo",
+            f"https://www.goibibo.com/hotels/hotels-in-{slug}-ct/"
+            f"?hquery=%7B%22ci%22%3A%22{iso_in}%22%2C%22co%22%3A%22{iso_out}%22%7D",
+        ),
         (
             "makemytrip",
             f"https://www.makemytrip.com/hotels/hotel-listing/?checkin={mmt_in}&checkout={mmt_out}"
             f"&roomStayQualifier={rooms}&locusType=city&searchText={quote(city)}&country=IN",
         ),
-        ("goibibo", f"https://www.goibibo.com/hotels/hotels-in-{slug}-ct/"),
         (
+            # `no_rooms` and `group_children` are what make this a complete
+            # search rather than a partial one it fills in from a cookie.
             "booking.com",
             f"https://www.booking.com/searchresults.html?ss={quote(city)}"
-            f"&checkin={iso_in}&checkout={iso_out}&group_adults={max(1, travelers)}",
+            f"&checkin={iso_in}&checkout={iso_out}&group_adults={adults}"
+            f"&no_rooms=1&group_children=0&selected_currency=INR",
         ),
-        ("agoda", f"https://www.agoda.com/search?city={quote(city)}&checkIn={iso_in}"),
+        (
+            # A path, not a query. `/search?city=Agra` bounces to the home page;
+            # this shows rooms.
+            "agoda",
+            f"https://www.agoda.com/en-in/city/{slug}-{_country_code(city)}.html"
+            f"?checkIn={iso_in}&checkOut={iso_out}&adults={adults}",
+        ),
     ]
 
 

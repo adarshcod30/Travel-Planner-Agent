@@ -116,7 +116,14 @@ class Action:
 _REF_LINE = re.compile(
     r"^\s*-\s+(?P<role>[a-z]+)"  # role, e.g. button / link / textbox
     r'(?:\s+"(?P<name>[^"]*)")?'  # optional accessible name
-    r"[^\[]*\[ref=(?P<ref>e\d+)\]",
+    # Any number of bracketed attributes may sit between the name and the ref
+    # — `[active]`, `[checked]`, `[expanded]`, `[cursor=pointer]`. Excluding
+    # "[" here instead was a real bug: Google's search box renders as
+    # `combobox "Search" [active] [ref=e40]`, so the one element a person most
+    # wants to click was the one element the takeover panel could not see.
+    r"(?:\s*\[[^\]]*\])*?"
+    # Refs inside an iframe carry a frame prefix: `f4e19`, not `e19`.
+    r"\s*\[ref=(?P<ref>[a-z]*\d*e\d+)\]",
 )
 
 #: Roles a person can meaningfully act on. The tree is mostly `generic`

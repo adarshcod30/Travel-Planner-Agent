@@ -154,6 +154,18 @@ ACTIONABLE_ROLES = (
 #: only click the nav bar over and over — which is exactly what it did.
 _CONTAINER_ROLES = ("generic", "paragraph", "heading", "listitem", "cell", "img", "image")
 
+#: Labels a card puts on its own controls. They are not the card.
+_CONTROL_PHRASES = (
+    "price per night",
+    "check availability",
+    "view deal",
+    "select room",
+    "see availability",
+    "view rooms",
+    "book now",
+    "show prices",
+)
+
 #: Words that mark a container as part of a search or booking widget. Short
 #: label text on a div is the shape those widgets take.
 _WIDGET_WORDS = (
@@ -241,6 +253,46 @@ def _looks_like_a_name(text: str) -> bool:
     return not re.fullmatch(r"[\d.,()₹%+\-\s]+", stripped)
 
 
+def _shared_run(fragments: list[str], minimum: int = 8) -> str:
+    """The longest phrase two or more fragments have in common.
+
+    Some sites build a card entirely out of image alt text — agoda's read
+    "Exterior view, Hotel Taj Inn in Agra" and "Public areas, Hotel Taj Inn in
+    Agra" — so no single fragment is the hotel's name, but every one of them
+    contains it. What repeats across them is the thing they are all pictures
+    of, and that is exactly the name.
+    """
+    if len(fragments) < 2:
+        return ""
+    first, best = fragments[0], ""
+    for other in fragments[1:]:
+        # Longest common substring of two fragments, walking the shorter one.
+        for start in range(len(first)):
+            for end in range(len(first), start + len(best), -1):
+                piece = first[start:end]
+                if len(piece) > len(best) and piece in other:
+                    best = piece
+                    break
+    return _snap_to_word(best) if len(_snap_to_word(best)) >= minimum else ""
+
+
+def _snap_to_word(text: str) -> str:
+    """Trim a common substring back to where a word actually starts.
+
+    A longest-common-substring does not respect word boundaries: "Recreational
+    facilities, Hotel Sahibs Royal Ville" and "Exterior view, Hotel Sahibs
+    Royal Ville" share the trailing "n" of two different words, so the run came
+    out as "n, Hotel Sahibs Royal Ville in Agra".
+    """
+    trimmed = text.strip(" ,.-·|")
+    # A partial word followed by a comma is the common case: "n, Hotel …".
+    trimmed = re.sub(r"^[a-z]*[,;]\s*", "", trimmed)
+    # Otherwise start at the first capitalised word, if one is close by.
+    if trimmed[:1].islower() and (m := re.search(r"\b[A-Z]", trimmed[:25])):
+        trimmed = trimmed[m.start() :]
+    return trimmed.strip(" ,.-·|")
+
+
 def _name_first(fragments: list[str]) -> list[str]:
     """Put the fragment that reads like a name in front.
 
@@ -284,8 +336,19 @@ def _label_from_children(lines: list[str], index: int, indent: int) -> str:
         if _looks_like_a_name(text) and text not in parts:
             parts.append(text)
 
-    ordered = _name_first([p.lstrip("|·-— ").strip() for p in parts])
-    return " · ".join(ordered[:2])[:90]
+    cleaned = [p.lstrip("|·-— ").strip() for p in parts]
+
+    # When the fragments are all descriptions of the same thing, what they
+    # share is its name — and that beats any one of them. The first version
+    # skipped this whenever the shared phrase was *also* a fragment on its own,
+    # which is backwards: a card that says "Hotel Taj Inn in Agra" outright and
+    # then six more times inside its image captions is the clearest case there
+    # is, and it was the only case that mattered.
+    if shared := _shared_run(cleaned):
+        rest = [f for f in cleaned if shared not in f][:1]
+        return " · ".join([shared, *rest])[:90]
+
+    return " · ".join(_name_first(cleaned)[:2])[:90]
 
 
 def _price_anchors(lines: list[str]) -> set[int]:
@@ -327,12 +390,19 @@ def _score(role: str, name: str, clickable: bool, borrowed: bool = False) -> int
     # first version ranked inputs highest and buried all 429 hotels beneath a
     # sort dropdown and a list of amenity checkboxes.
     if borrowed and clickable:
-        # Several distinct pieces of content is what tells a result card apart
-        # from a filter chip. "Lemon Tree Hotel Agra · Restaurant" is a hotel;
-        # "Guaranteed Late Check-out" is an amenity filter that happens to be a
-        # clickable list item, and by length alone the two were tied — so the
-        # filters won on document order and the hotels never made the cut.
-        return 140 if " · " in name else 25
+        # A card's own controls sit in clickable boxes too, and they read like
+        # labels rather than names. agoda's "Avg price per night · Check
+        # availability" is the price block *of* a card, and it outranked every
+        # hotel on the page.
+        if any(phrase in lowered for phrase in _CONTROL_PHRASES):
+            return 30
+        # An amenity filter — "Guaranteed Late Check-out" — is a clickable box
+        # with one phrase in it, and the phrase is about booking mechanics.
+        if any(w in lowered for w in _WIDGET_WORDS):
+            return 30
+        # What is left is content: either several distinct fragments, or one
+        # long enough to be a name rather than a label.
+        return 140 if " · " in name or len(name) > 18 else 25
     if role in ("textbox", "searchbox", "combobox", "spinbutton"):
         return 100
     if role == "button" and name:

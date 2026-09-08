@@ -173,6 +173,36 @@ def stay_targets(city: str, checkin: date, checkout: date, travelers: int) -> li
     ]
 
 
+#: Which listing a browsing agent can actually get *through*, best first.
+#:
+#: A separate ordering from `stay_targets` on purpose, because the two answer
+#: different questions. `stay_targets` is ordered by which site quotes prices
+#: to an automated browser; this is ordered by whose result cards a browsing
+#: agent can read and click. They are not the same site: agoda quotes prices
+#: readily and builds its cards out of image alt text, so a run that got its
+#: prices from agoda was then stuck on agoda — and measurably could not finish.
+#: goibibo leads here because its cards are named divs and it is the one that
+#: reaches a booking page.
+NAVIGABLE_FIRST = ("goibibo", "makemytrip", "booking.com", "agoda")
+
+
+def continuation_order(targets: list[tuple[str, str]], found_on: str | None = None) -> list[str]:
+    """Listing URLs to hand the browsing agent, most navigable first.
+
+    The site that produced the prices is kept in the list — it is where the
+    traveller was just quoted — but it does not get to go first unless it is
+    also the one that can be navigated.
+    """
+    by_site = dict(targets)
+    ordered = [by_site[s] for s in NAVIGABLE_FIRST if s in by_site]
+    if found_on and (url := by_site.get(found_on)) and url in ordered:
+        # Keep it, but only ahead of the sites that rank below it anyway.
+        ordered = [u for u in ordered if u != url]
+        rank = NAVIGABLE_FIRST.index(found_on) if found_on in NAVIGABLE_FIRST else len(ordered)
+        ordered.insert(min(rank, len(ordered)), url)
+    return ordered
+
+
 def travel_targets(origin: str | None, city: str, when: date) -> list[tuple[str, str]]:
     """Pages for getting there. Rail first — for most Indian trips it is the answer."""
     if not origin:
@@ -519,13 +549,15 @@ async def open_booking(
             log.info("booking_prices_found", site=label, count=len(prices))
             report = _report(label, url, page, attempts, handed_over=None, prices=prices)
             if go_further:
+                # Not `url` first. The site that quoted the prices is not
+                # necessarily the one whose cards can be navigated, and
+                # starting on the wrong one burned the whole budget.
+                order = continuation_order(targets, found_on=label)
                 further = await proceed_toward_booking(
                     toolset,
                     thread_id=thread_id,
-                    listing_url=url,
-                    # Everything else that was reachable, so a site whose
-                    # cards this cannot read does not end the attempt.
-                    fallback_urls=[u for _, u in targets if u != url],
+                    listing_url=order[0] if order else url,
+                    fallback_urls=order[1:],
                     city=city,
                     checkin=checkin,  # type: ignore[arg-type]
                     checkout=checkout,  # type: ignore[arg-type]

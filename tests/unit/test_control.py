@@ -314,3 +314,56 @@ def test_payment_words_alone_are_not_enough():
 
 def test_a_booking_path_is_a_payment_page():
     assert control.classify_gate({"path": "/hotels/nhotel-booking/"}) == "payment"
+
+
+# --- cards whose text is all image captions -------------------------------------
+
+AGODA_CARD = """### Snapshot
+```yaml
+- generic [ref=e362] [cursor=pointer]:
+  - generic [ref=e363]: Family room, Hotel Taj Inn in Agra
+  - generic [ref=e364]: Hotel Taj Inn in Agra
+  - generic [ref=e365]: Restaurant, Hotel Taj Inn in Agra
+  - generic [ref=e366]: Exterior view, Hotel Taj Inn in Agra
+- generic [ref=e341] [cursor=pointer]:
+  - generic [ref=e342]: Avg price per night
+  - generic [ref=e343]: Check availability
+```
+"""
+
+
+def test_a_name_is_recovered_from_repeated_image_captions():
+    """Some sites build a card entirely out of image alt text — every fragment
+    is "<something>, Hotel Taj Inn in Agra". No one fragment is the name, but
+    what they all share is."""
+    by_ref = {e["ref"]: e for e in control.interactive_elements(AGODA_CARD)}
+    assert by_ref["e362"]["name"] == "Hotel Taj Inn in Agra"
+
+
+def test_a_cards_own_controls_are_not_the_card():
+    """ "Avg price per night · Check availability" is the price block of a card,
+    and being a clickable box with two fragments it outranked every hotel on
+    the page."""
+    ranked = [e["name"] for e in control.interactive_elements(AGODA_CARD)]
+    assert ranked[0] == "Hotel Taj Inn in Agra"
+    assert not ranked[0].startswith("Avg price")
+
+
+def test_a_shared_run_is_trimmed_to_a_word_boundary():
+    """Longest-common-substring does not respect words: "Recreational
+    facilities, Hotel Sahibs" and "Exterior view, Hotel Sahibs" share the
+    trailing "n" of two different words."""
+    assert (
+        control._shared_run(
+            [
+                "Recreational facilities, Hotel Sahibs Royal Ville in Agra",
+                "Exterior view, Hotel Sahibs Royal Ville in Agra",
+            ]
+        )
+        == "Hotel Sahibs Royal Ville in Agra"
+    )
+
+
+def test_an_amenity_filter_is_still_demoted():
+    assert control._score("generic", "Guaranteed Early Check-in", True, borrowed=True) == 30
+    assert control._score("generic", "Radisson Hotel Agra in Agra", True, borrowed=True) == 140

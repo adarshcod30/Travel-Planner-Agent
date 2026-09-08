@@ -123,6 +123,48 @@ Binding the resolved settings into the node matters too: the factory computing
 per-run settings and the node calling `get_settings()` anyway produced a system
 that logged one thing and did another.
 
+## Driving a browser, rather than following a script
+
+`browser.py` bundles whole choreographies — navigate, snapshot, detect a block,
+move to the next target — because handing a small model a pile of generic
+`browser_*` tools and asking it to orchestrate the retry produced hung and
+looping runs in the prototype this grew out of. That shape is right whenever you
+know in advance which page answers the question.
+
+It is wrong for a booking site, where the next thing to do depends entirely on
+what came back: a date picker, a cookie wall, a room list, a "select rooms"
+button that only exists once dates are chosen. `agent.py` is the other kind —
+look at the page, decide, act, look again — kept narrow on purpose:
+
+- **A closed action set.** click, type, press, scroll, navigate, back, wait, plus
+  `done` and `stop_for_human`. It cannot invent an action.
+- **A step budget and a clock**, both bounded and both reported.
+- **Structured decisions**, so a malformed one is repaired rather than parsed
+  hopefully.
+- **The gate wins.** The login/payment check runs *before* the model is
+  consulted and overrides it. A model must not be able to decide to type into a
+  password field, and this is where that is guaranteed rather than requested.
+
+### Seeing the page as a model can use it
+
+Most of the work here is in what the loop is shown, and four assumptions had to
+be corrected against live pages:
+
+- **A search box is often not an input.** goibibo's "Where to" renders as
+  `generic [ref=e72]: Where to` — a div. Excluding generic roles made the one
+  thing that page exists for invisible.
+- **Document order is useless.** A listing page's first forty elements are its
+  filter panel; its results are four hundred lines down. Elements are ranked by
+  usefulness, and a result card outranks every filter.
+- **A card has no name of its own.** It is a clickable div wrapping a dozen
+  unnamed divs, so it borrows one from the best text inside it. Where every
+  fragment is an image caption — "Exterior view, Hotel Taj Inn in Agra" — the
+  name is what they all *share*.
+- **"Did that work" is not a URL comparison.** Typing into an autocomplete opens
+  a panel of 759 properties without touching the address, so a working action
+  read as a failed one and the loop repeated it until its budget ran out. The
+  page's content is compared, and what appeared is named.
+
 ## Authorization scope
 
 Threads, runs and crons are user data and are owner-scoped. **Assistants are

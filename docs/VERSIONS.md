@@ -24,6 +24,10 @@ It is also deliberately naive: the itinerary agent runs with no attractions, no
 hotels and no weather to draw on, and has to invent them. **v2 exists to fix
 exactly that.**
 
+**Measured:** 4.1s of agent work in 6.0s of wall clock — one call, 1,993 tokens.
+It produces no budget figure at all, only a range and a list of what to verify
+before booking, which is the honest output for a model working from recall.
+
 ---
 
 ## v2 · Parallel — `v2_parallel`
@@ -46,7 +50,8 @@ target fire it once per source *superstep*, so with uneven branch depths the
 itinerary agent runs more than once per request. That was verified empirically
 before the join was written, and a topology test pins it.
 
-**Measured:** 12.9s of agent work in 8.8s of wall clock — parallelism saved 4.1s.
+**Measured:** 14.8s of agent work in 14.0s of wall clock across 6 calls and 14,445
+tokens — the fan-out running four specialists in the time of the slowest.
 
 ---
 
@@ -74,7 +79,9 @@ The loop is bounded. Past the ceiling the orchestrator short-circuits to an
 empty decision **without calling the model at all**, so a reviewer that never
 approves cannot spin.
 
-**Measured:** 17.8s of agent work in 11.9s of wall clock — 5.9s saved.
+**Measured:** 57.8s of agent work in 56.1s of wall clock across 24 calls and 69,260
+tokens. The reviewer rejected the draft twice, and the orchestrator had to infer
+from prose what v4 is simply told — which is the whole cost of the difference.
 
 ---
 
@@ -124,7 +131,10 @@ silent failures:
   must not use `from __future__ import annotations`, which turns annotations
   into strings and makes `TypedDict` silently mark every key required.
 
-**Measured:** paused at 11.8s; a revision round took 15.0s; 15 agent calls
+**Measured:** 17.2s of agent work in 16.1s of wall clock across 9 calls and 23,457
+tokens — nine where v3 spent twenty-four, for the same request.
+
+Older note: paused at 11.8s; a revision round took 15.0s; 15 agent calls
 across the whole conversation. Asked for *"fewer temples on day 2, add a food
 market, lower the hotel tier"*, the orchestrator re-ran exactly `attraction`,
 `hotel`, `budget` and `itinerary`.
@@ -191,7 +201,7 @@ refuse automated browsers routinely, and here that is the feature: the browser
 is already on the right search, so a refusal becomes the handover. Card, UPI and
 bank details are never entered, on any approval.
 
-**Measured:** 26.1s wall clock for 18.8s of agent time across 9 calls and 31,487
+**Measured:** 28.2s wall clock for 19.4s of agent time across 9 calls and 31,522
 tokens. The gap is the real browsing, which is not model time. In a typical run
 Wikivoyage answers the destination lookup, the commercial aggregators refuse the
 automated visitor, and the chain reports which ones did.

@@ -293,6 +293,8 @@ async def search(
                 elif not await type_into_search_box(toolset, home, query, thread_id=thread_id):
                     break
                 snap = toolset.get("browser_snapshot")
+                if snap is None:
+                    break  # no snapshot tool: no engine will work, not this one
                 text = mcp_text(await snap.ainvoke({}))
             except Exception as exc:
                 log.info("search_engine_failed", engine=engine, how=how, error=type(exc).__name__)

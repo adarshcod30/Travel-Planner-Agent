@@ -9,8 +9,10 @@ regex.
 
 import logging
 import sys
+from typing import cast
 
 import structlog
+from structlog.typing import Processor
 
 from travel_planner.core.config import get_settings
 
@@ -40,7 +42,7 @@ def configure_logging() -> None:
     for noisy in ("httpx", "httpcore", "mcp.client.streamable_http"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
-    shared = [
+    shared: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
@@ -66,4 +68,6 @@ def configure_logging() -> None:
 def get_logger(name: str) -> structlog.stdlib.BoundLogger:
     """Return a bound logger, configuring structlog on first use."""
     configure_logging()
-    return structlog.get_logger(name)
+    # structlog types get_logger as Any; the factory above is the stdlib one,
+    # so what actually comes back is a stdlib BoundLogger.
+    return cast(structlog.stdlib.BoundLogger, structlog.get_logger(name))

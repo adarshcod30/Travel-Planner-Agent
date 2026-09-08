@@ -260,15 +260,18 @@ def plan_sections(state: TripState) -> list[PlanSection]:
 
     if a := state.get("attractions"):
         lines = ["## Attractions"]
-        for x in a.attractions:
-            lines.append(f"- **{x.name}** ({x.category}, ~{x.duration_hours:g}h) — {x.description}")
+        for spot in a.attractions:
+            lines.append(
+                f"- **{spot.name}** ({spot.category}, ~{spot.duration_hours:g}h) — {spot.description}"
+            )
         parts.append(_section("attractions", "Attractions", "attraction", "\n".join(lines)))
 
     if h := state.get("hotels"):
         lines = ["## Where to stay"]
-        for x in h.hotels:
+        for hotel in h.hotels:
             lines.append(
-                f"- **{x.name}** · {x.tier} · {_money(x.price_per_night)}/night · {x.rating:g}/5 — {x.note}"
+                f"- **{hotel.name}** · {hotel.tier} · {_money(hotel.price_per_night)}/night"
+                f" · {hotel.rating:g}/5 — {hotel.note}"
             )
         parts.append(_section("hotels", "Where to stay", "hotel", "\n".join(lines)))
 

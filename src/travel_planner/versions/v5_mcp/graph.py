@@ -116,7 +116,9 @@ def make_research_node(settings: Settings | None = None):
     return _research
 
 
-def build(*, max_iterations: int | None = None, settings: Settings | None = None) -> StateGraph:
+def build(
+    *, max_iterations: int | None = None, settings: Settings | None = None
+) -> StateGraph[TripState]:
     """v4's topology — section gate included — with research before the fan-out."""
     g = StateGraph(TripState)
     g.add_node("research", make_research_node(settings))

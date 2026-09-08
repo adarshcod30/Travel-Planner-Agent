@@ -31,7 +31,7 @@ def group_indian(n: int) -> str:
     else:
         last3, rest = s[-3:], s[:-3]
         # Pairs, right to left, over everything above the final three digits.
-        pairs = []
+        pairs: list[str] = []
         while len(rest) > 2:
             pairs.insert(0, rest[-2:])
             rest = rest[:-2]

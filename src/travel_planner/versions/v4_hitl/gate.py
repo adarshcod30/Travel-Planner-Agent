@@ -22,8 +22,7 @@ Everything the human does is recorded as a `Revision`, so a plan that took four
 rounds can say so instead of arriving looking like a first draft.
 """
 
-from collections.abc import Callable
-from typing import Any
+from typing import Any, cast, get_args
 
 from langgraph.graph import END
 from langgraph.types import interrupt
@@ -33,6 +32,8 @@ from travel_planner.core.config import get_settings
 from travel_planner.core.logging import get_logger
 from travel_planner.core.state import (
     AgentName,
+    HumanDecision,
+    Node,
     OrchestratorDecision,
     Revision,
     SectionComment,
@@ -110,7 +111,7 @@ def feedback_block(comments: list[SectionComment], sections: dict[str, PlanSecti
 
 def make_section_gate_node(
     max_iterations: int | None = None,
-) -> Callable[[TripState], dict[str, Any]]:
+) -> Node:
     """Build the gate with a hard ceiling on comment rounds.
 
     The ceiling lives here rather than in the orchestrator because on this path
@@ -155,10 +156,23 @@ def make_section_gate_node(
         }
 
         kind, args = parse_resume(interrupt(payload))
-        log.info("human_decision", decision=kind, iteration=iteration)
 
-        update: dict[str, Any] = {"human_decision": kind}
-        revision = Revision(iteration=iteration, decision=kind)
+        # `parse_resume` accepts every resume type any version uses, including
+        # v5's "book" and "skip". This pause did not offer those. Saying so is
+        # the difference between a clear rejection and a Pydantic
+        # ValidationError raised from inside a node halfway through a run —
+        # same reasoning as rejecting an unknown section key rather than
+        # quietly dropping the comment.
+        if kind not in get_args(HumanDecision):
+            raise ValueError(
+                f"{kind!r} is not a plan-review decision; "
+                f"expected one of {', '.join(get_args(HumanDecision))}"
+            )
+        decision = cast(HumanDecision, kind)
+        log.info("human_decision", decision=decision, iteration=iteration)
+
+        update: dict[str, Any] = {"human_decision": decision}
+        revision = Revision(iteration=iteration, decision=decision)
 
         if kind == "comments":
             comments = parse_comments(args, commentable)

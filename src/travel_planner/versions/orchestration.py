@@ -23,14 +23,13 @@ since v4 is where a paused run stops being a yes/no question — but the payload
 shape is shared, so parsing it is not v4's business alone.
 """
 
-from collections.abc import Callable
-from typing import Any
+from typing import Any, cast, get_args
 
 from travel_planner.agents.base import BaseAgent
 from travel_planner.agents.orchestrator import OrchestratorAgent
 from travel_planner.core.config import get_settings
 from travel_planner.core.logging import get_logger
-from travel_planner.core.state import OrchestratorDecision, TripState
+from travel_planner.core.state import Node, OrchestratorDecision, ResumeType, TripState
 
 log = get_logger(__name__)
 
@@ -50,7 +49,7 @@ DEPENDS_ON: dict[str, tuple[str, ...]] = {
 # ---------------------------------------------------------------------------
 
 
-def rerun_aware(agent: BaseAgent) -> Callable[[TripState], dict[str, Any]]:
+def rerun_aware(agent: BaseAgent) -> Node:
     """Wrap a specialist so it skips itself on revisions it was not asked to join."""
 
     def node(state: TripState) -> dict[str, Any]:
@@ -80,7 +79,7 @@ def rerun_aware(agent: BaseAgent) -> Callable[[TripState], dict[str, Any]]:
 
 def make_orchestrator_node(
     max_iterations: int | None = None,
-) -> Callable[[TripState], dict[str, Any]]:
+) -> Node:
     """Build the orchestrator node with a hard iteration ceiling."""
     limit = (
         max_iterations if max_iterations is not None else get_settings().max_orchestrator_iterations
@@ -134,10 +133,11 @@ def route_after_orchestrator(state: TripState) -> str | list[str]:
 # Resume payloads (v4+)
 # ---------------------------------------------------------------------------
 
-_RESUME_TYPES = ("accept", "edit", "response", "ignore", "comments", "book", "skip")
+#: Derived from the type rather than restated, so the two cannot drift apart.
+_RESUME_TYPES: tuple[ResumeType, ...] = get_args(ResumeType)
 
 
-def parse_resume(payload: Any) -> tuple[str, Any]:
+def parse_resume(payload: Any) -> tuple[ResumeType, Any]:
     """Normalise a resume payload to (type, args).
 
     Aegra's documented shape is a list with one entry, `[{"type": ..., "args":
@@ -154,4 +154,4 @@ def parse_resume(payload: Any) -> tuple[str, Any]:
     kind = str(payload["type"]).lower()
     if kind not in _RESUME_TYPES:
         raise ValueError(f"unknown resume type {kind!r}; expected one of {_RESUME_TYPES}")
-    return kind, payload.get("args")
+    return cast(ResumeType, kind), payload.get("args")

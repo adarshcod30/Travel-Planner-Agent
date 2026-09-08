@@ -433,10 +433,9 @@ async def proceed_toward_booking(
     # cards a browsing agent can read — goibibo's are named divs, agoda's are
     # built out of image alt text. Same chain-of-targets shape as everywhere
     # else here, for the same reason: any single site is a coin toss.
-    seen: set[str] = set()
-    ordered = [
-        u for u in [listing_url, *(fallback_urls or [])] if u and not (u in seen or seen.add(u))
-    ]
+    # dict.fromkeys de-duplicates and keeps first-seen order, which is the
+    # property that matters: the first target is the one most likely to work.
+    ordered = [u for u in dict.fromkeys([listing_url, *(fallback_urls or [])]) if u]
     if not ordered:
         return {"reached": None, "handed_over": None, "url": None, "why": "no listing to open"}
 
@@ -548,7 +547,7 @@ async def open_booking(
         if prices:
             log.info("booking_prices_found", site=label, count=len(prices))
             report = _report(label, url, page, attempts, handed_over=None, prices=prices)
-            if go_further:
+            if go_further and checkin and checkout:
                 # Not `url` first. The site that quoted the prices is not
                 # necessarily the one whose cards can be navigated, and
                 # starting on the wrong one burned the whole budget.
@@ -559,8 +558,8 @@ async def open_booking(
                     listing_url=order[0] if order else url,
                     fallback_urls=order[1:],
                     city=city,
-                    checkin=checkin,  # type: ignore[arg-type]
-                    checkout=checkout,  # type: ignore[arg-type]
+                    checkin=checkin,
+                    checkout=checkout,
                     travelers=travelers,
                     settings=settings,
                 )
@@ -579,7 +578,7 @@ async def open_booking(
     # Every crafted URL missed. Before giving up, do it the way a person would
     # — open the site and fill its own search form. Slower, and it survives the
     # week a site changes its routing.
-    if by_hand:
+    if by_hand and checkin and checkout:
         events.phase("booking", "no URL worked; searching the site by hand")
         agent_result = await search_by_hand(
             toolset,

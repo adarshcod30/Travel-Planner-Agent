@@ -24,6 +24,7 @@ from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Json
 
 from travel_planner.core.config import get_settings
 from travel_planner.core.logging import get_logger
@@ -116,11 +117,17 @@ async def archive_trip(
                     budget.get("total"),
                     budget.get("currency", "INR"),
                     plan,
-                    psycopg.types.json.Json(telemetry),
+                    Json(telemetry),
                 ),
             )
         ).fetchone()
         await conn.commit()
+
+    # `INSERT ... RETURNING` always yields a row, so this is unreachable — but
+    # unreachable-and-checked beats "'NoneType' is not subscriptable" arriving
+    # from a storage layer with no indication of which statement produced it.
+    if row is None:
+        raise RuntimeError("archiving the trip returned no row")
 
     log.info(
         "trip_archived", thread_id=thread_id, trip_id=str(row["trip_id"]), plan_chars=len(plan)
@@ -288,4 +295,5 @@ async def storage_stats() -> dict[str, Any]:
             )
         ).fetchone()
     artifacts = sum(1 for _ in RUN_ARTIFACT_ROOT.rglob("*")) if RUN_ARTIFACT_ROOT.is_dir() else 0
-    return {**row, "run_artifacts": artifacts}
+    # A SELECT of bare aggregates always returns one row; same reasoning as above.
+    return {**(row or {}), "run_artifacts": artifacts}

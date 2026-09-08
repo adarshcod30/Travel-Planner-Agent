@@ -30,9 +30,11 @@ jobs:
       - name: Format check
         run: uv run ruff format --check .
 
+      # Blocking. It was advisory while 35 errors stood; they are gone, and an
+      # advisory type check on a clean tree is just a slower way of not having
+      # one — the next regression would land green.
       - name: Type check
         run: uv run mypy src
-        continue-on-error: true
 
       # No .env and no credentials on purpose: the suite must be hermetic. The
       # Bedrock model IDs have defaults precisely so this passes here, rather

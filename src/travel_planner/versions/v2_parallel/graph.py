@@ -61,7 +61,7 @@ async def reference_node(state: TripState) -> dict[str, Any]:
     return {"research_notes": notes}
 
 
-def build() -> StateGraph:
+def build() -> StateGraph[TripState]:
     g = StateGraph(TripState)
     g.add_node("intake", intake_node)
     g.add_node("destination", DestinationAgent())

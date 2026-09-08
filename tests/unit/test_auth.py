@@ -84,12 +84,23 @@ def test_own_preserves_existing_metadata(ctx):
 
 
 async def test_threads_and_crons_are_owner_scoped(ctx):
+    """Called the way Aegra calls them: `handler(ctx=..., value=...)`.
+
+    Keyword arguments are not a style choice here. `auth_handlers.py` invokes
+    every registered handler with both names, so a handler that only accepts
+    them positionally would still pass a positional test and fail in the
+    server. Matching the real call convention is the point of the test.
+    """
     for fn in (h.owns_threads, h.owns_crons, h.owns_store):
-        assert await fn(ctx, {}) == {"owner": "alice"}
+        assert await fn(ctx=ctx, value={}) == {"owner": "alice"}
 
 
 async def test_assistant_create_is_owner_scoped(ctx):
-    assert await h.restrict_assistant_create(ctx, {}) == {"owner": "alice"}
+    assert await h.restrict_assistant_create(ctx=ctx, value={}) == {"owner": "alice"}
+
+
+async def test_assistant_delete_is_owner_scoped(ctx):
+    assert await h.restrict_assistant_delete(ctx=ctx, value={}) == {"owner": "alice"}
 
 
 def test_no_global_handler_is_registered():

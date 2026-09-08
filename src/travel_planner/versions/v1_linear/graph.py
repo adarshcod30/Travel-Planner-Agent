@@ -25,7 +25,7 @@ from travel_planner.versions.common import finalize_node, intake_node
 VERSION = "v1_linear"
 
 
-def build() -> StateGraph:
+def build() -> StateGraph[TripState]:
     """Assemble the uncompiled graph. Tests inspect this; Aegra compiles it."""
     g = StateGraph(TripState)
     g.add_node("intake", intake_node)

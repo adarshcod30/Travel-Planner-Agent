@@ -39,7 +39,7 @@ a style preference.
 
 import operator
 from datetime import UTC, datetime
-from typing import Annotated, Literal, NotRequired
+from typing import Annotated, Any, Literal, NotRequired, Protocol
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
@@ -58,6 +58,13 @@ BudgetLevel = Literal["budget", "mid-range", "luxury"]
 TripPace = Literal["relaxed", "balanced", "packed"]
 ReviewVerdict = Literal["approved", "needs_revision"]
 HumanDecision = Literal["accept", "edit", "response", "ignore", "comments"]
+
+#: Everything a client may send to resume a run: v4's five review decisions
+#: plus the two answers v5's booking offer takes. Deliberately a superset of
+#: `HumanDecision` — a pause only accepts the subset it actually offered, and
+#: answering a plan review with "book" is a client error, not a decision.
+BookingAnswer = Literal["book", "skip"]
+ResumeType = Literal["accept", "edit", "response", "ignore", "comments", "book", "skip"]
 
 #: Specialist agents the orchestrator is allowed to re-run. Constraining the
 #: literal set means an orchestrator hallucinating an agent name fails schema
@@ -435,3 +442,19 @@ class TripState(TypedDict):
     # --- telemetry (reduced across branches) ---
     agent_runs: NotRequired[Annotated[list[AgentRun], operator.add]]
     errors: NotRequired[Annotated[list[AgentError], operator.add]]
+
+
+class Node(Protocol):
+    """What a LangGraph node in this project looks like.
+
+    A `Protocol` rather than `Callable[[TripState], dict[str, Any]]`, because
+    the two are not interchangeable to a type checker. `add_node` accepts a
+    ten-way union of generic protocols and infers the state type from whatever
+    it is handed. Given a plain `def` it succeeds; given a value annotated as a
+    bare `Callable` it cannot solve the type variable and falls back to `Never`,
+    so every factory-built node — the re-run wrappers, the orchestrator, the
+    section gate — was reported as a type error. Naming the contract fixes that
+    and says what a node is besides.
+    """
+
+    def __call__(self, state: TripState) -> dict[str, Any]: ...

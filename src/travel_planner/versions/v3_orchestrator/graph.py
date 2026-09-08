@@ -43,7 +43,7 @@ JOIN = ("packing", "hotel", "attraction", "customs")
 
 
 def add_specialist_dag(
-    g: StateGraph,
+    g: StateGraph[TripState],
     *,
     max_iterations: int | None = None,
     fanout_source: str = "destination",
@@ -107,7 +107,7 @@ def add_specialist_dag(
     g.add_edge("remember", tail)
 
 
-def build(*, max_iterations: int | None = None) -> StateGraph:
+def build(*, max_iterations: int | None = None) -> StateGraph[TripState]:
     g = StateGraph(TripState)
     add_specialist_dag(g, max_iterations=max_iterations)
     g.add_conditional_edges("review", route_after_review, ["finalize", "orchestrator"])

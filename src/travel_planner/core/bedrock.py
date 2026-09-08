@@ -28,6 +28,7 @@ parse failure as a recoverable event with three escalating responses:
 import time
 from collections.abc import Sequence
 from functools import lru_cache
+from typing import Any, cast
 
 from botocore.config import Config as BotoConfig
 from langchain_aws import ChatBedrockConverse
@@ -143,7 +144,11 @@ def invoke_structured[SchemaT: BaseModel](
 
         while True:
             try:
-                out = structured.invoke(convo)
+                # `include_raw=True` above is what makes this a dict of
+                # raw/parsed/parsing_error; without it LangChain returns the
+                # parsed model directly, and the signature's union covers both
+                # modes. Narrowing to the one actually asked for.
+                out = cast(dict[str, Any], structured.invoke(convo))
             except Exception as exc:  # boto/botocore/langchain transport errors
                 log.error(
                     "model_invocation_failed",

@@ -21,7 +21,7 @@ owner onto every resource the caller creates, then filters reads by it.
 """
 
 import os
-from typing import Any
+from typing import Any, cast
 
 from langgraph_sdk import Auth
 
@@ -101,33 +101,33 @@ def _own(ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
 
 
 @auth.on.threads
-async def owns_threads(ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
+async def owns_threads(*, ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
     """Threads, and the runs inside them, belong to their creator."""
     return _own(ctx, value)
 
 
 @auth.on.crons
-async def owns_crons(ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
+async def owns_crons(*, ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
     """Scheduled runs belong to whoever scheduled them."""
     return _own(ctx, value)
 
 
 @auth.on.store
-async def owns_store(ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
+async def owns_store(*, ctx: Auth.types.AuthContext, value: dict[str, Any]) -> dict[str, str]:
     """Anything written to the semantic store is scoped to its writer."""
     return _own(ctx, value)
 
 
 @auth.on.assistants.create
 async def restrict_assistant_create(
-    ctx: Auth.types.AuthContext, value: dict[str, Any]
+    *, ctx: Auth.types.AuthContext, value: Auth.types.AssistantsCreate
 ) -> dict[str, str]:
     """A caller-created assistant is theirs; the server's defaults stay public."""
-    return _own(ctx, value)
+    return _own(ctx, cast(dict[str, Any], value))
 
 
 @auth.on.assistants.delete
 async def restrict_assistant_delete(
-    ctx: Auth.types.AuthContext, value: dict[str, Any]
+    *, ctx: Auth.types.AuthContext, value: Auth.types.AssistantsDelete
 ) -> dict[str, str]:
     return {"owner": ctx.user.identity}

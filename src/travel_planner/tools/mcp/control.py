@@ -996,7 +996,7 @@ async def perform(
         case "back":
             result = await _invoke(toolset, "browser_navigate_back", {}, timeout)
         case "wait":
-            args = {"time": min(float(action.seconds), 10.0)}
+            args: dict[str, Any] = {"time": min(float(action.seconds), 10.0)}
             if action.text:
                 args = {"text": action.text}
             result = await _invoke(toolset, "browser_wait_for", args, timeout)

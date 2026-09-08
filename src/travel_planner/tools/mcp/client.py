@@ -34,10 +34,11 @@ import sys
 from collections.abc import AsyncIterator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.sessions import Connection
 from langchain_mcp_adapters.tools import load_mcp_tools
 
 from travel_planner.core.config import Settings, get_settings
@@ -254,7 +255,7 @@ async def browser_session(settings: Settings | None = None) -> AsyncIterator[Mcp
     stack = AsyncExitStack()
     stack.push_async_callback(_release, sem)
     try:
-        client = MultiServerMCPClient({"playwright": conn})
+        client = MultiServerMCPClient({"playwright": cast(Connection, conn)})
         session = await stack.enter_async_context(client.session("playwright"))
         tools = await asyncio.wait_for(
             load_mcp_tools(session), timeout=settings.mcp_tool_timeout_seconds
@@ -297,7 +298,7 @@ async def load_toolset(settings: Settings | None = None) -> McpToolset:
 
     async def load_one(name: str, conn: dict[str, Any]) -> tuple[str, list[BaseTool] | str]:
         try:
-            client = MultiServerMCPClient({name: conn})
+            client = MultiServerMCPClient({name: cast(Connection, conn)})
             tools = await asyncio.wait_for(
                 client.get_tools(server_name=name), timeout=settings.mcp_tool_timeout_seconds
             )

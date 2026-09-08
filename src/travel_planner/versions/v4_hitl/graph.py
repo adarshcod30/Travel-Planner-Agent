@@ -31,7 +31,7 @@ from travel_planner.versions.v4_hitl.gate import make_section_gate_node, route_a
 VERSION = "v4_hitl"
 
 
-def build(*, max_iterations: int | None = None) -> StateGraph:
+def build(*, max_iterations: int | None = None) -> StateGraph[TripState]:
     g = StateGraph(TripState)
     add_specialist_dag(g, max_iterations=max_iterations)
     g.add_node("section_gate", make_section_gate_node(max_iterations))

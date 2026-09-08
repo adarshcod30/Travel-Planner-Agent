@@ -1,30 +1,118 @@
+<div align="center">
+
 # Travel Planner Agent
 
-**One travel planner, built five times over — linear, parallel, orchestrated, collaborative, and browser-driving — all five running side by side behind a single [Aegra](https://github.com/ibbybuilds/aegra) server and switchable at runtime.**
+### One travel planner, built five times over — linear, parallel, orchestrated, collaborative, and browser-driving — all five running side by side behind a single [Aegra](https://github.com/ibbybuilds/aegra) server and switchable at runtime.
+
+[![CI](https://github.com/adarshcod30/Travel-Planner-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/adarshcod30/Travel-Planner-Agent/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-1.2-orange)](https://langchain-ai.github.io/langgraph/)
+[![Aegra](https://img.shields.io/badge/Aegra-0.10-6f42c1)](https://github.com/ibbybuilds/aegra)
+[![Bedrock](https://img.shields.io/badge/AWS%20Bedrock-Amazon%20Nova-ff9900)](https://aws.amazon.com/bedrock/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/adarshcod30/Travel-Planner-Agent)](https://github.com/adarshcod30/Travel-Planner-Agent/commits/main)
+
+[**Report Bug**](https://github.com/adarshcod30/Travel-Planner-Agent/issues) &nbsp;·&nbsp; [**Request Feature**](https://github.com/adarshcod30/Travel-Planner-Agent/issues) &nbsp;·&nbsp; [**Architecture**](docs/ARCHITECTURE.md) &nbsp;·&nbsp; [**Versions**](docs/VERSIONS.md)
+
+</div>
 
 Plans trips from India, priced in rupees. Watch v5 drive a real Chromium, take
 the browser off it when a site wants a login, and let it walk an approved plan
 all the way to a live booking page.
 
-`langgraph` · `aegra` · `agent-protocol` · `amazon-bedrock` · `amazon-nova` · `mcp` · `playwright` · `browser-automation` · `human-in-the-loop` · `nextjs` · `postgres`
+**Topics:**
+`langgraph` · `aegra` · `agent-protocol` · `multi-agent` · `amazon-bedrock` ·
+`amazon-nova` · `mcp` · `model-context-protocol` · `playwright` ·
+`browser-automation` · `human-in-the-loop` · `hitl` · `ai-agents` ·
+`langchain` · `nextjs` · `react` · `postgresql` · `travel-planner` ·
+`agentic-ai` · `self-hosted`
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Why five?](#why-five)
+- [Measured, not claimed](#measured-not-claimed)
+- [Tech Stack](#tech-stack)
+- [System Architecture](#system-architecture)
+- [Application Flow](#application-flow)
+- [Aegra is the deployment](#aegra-is-the-deployment)
+- [LangGraph: one state, five shapes](#langgraph-one-state-five-shapes)
+- [The agents, and model tiering](#the-agents-and-model-tiering)
+- [MCP: six servers, two lifetimes](#mcp-six-servers-two-lifetimes)
+- [Human-in-the-loop](#human-in-the-loop)
+- [The browser: watch it, take it, book with it](#the-browser-watch-it-take-it-book-with-it)
+- [Memory](#memory-the-second-trip-starts-better-than-the-first)
+- [Storage that cleans up after itself](#storage-that-cleans-up-after-itself)
+- [Getting Started](#getting-started)
+- [Using it](#using-it)
+- [API Reference](#api-reference)
+- [Configuration](#configuration)
+- [Deployment & Infrastructure](#deployment--infrastructure)
+- [Testing](#testing)
+- [Project Structure](#project-structure)
+- [Documentation](#documentation)
+- [Safety boundary](#safety-boundary)
+- [Troubleshooting](#troubleshooting)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+- [Contact](#contact)
+
+---
+
+## Overview
+
+**Problem.** Most agent projects ship one architecture and assert it is the right
+one. The assertion is unfalsifiable, because there is nothing to compare it
+against. "Add an orchestrator" and "put a human in the loop" are advice, not
+measurements — nobody tells you what they cost.
+
+**Solution.** This ships **five working systems**, each adding exactly one idea
+to the one before it, all registered with the same server against the same state
+schema. Switching between them is one field in an API call — not a redeploy, not
+a branch. Put the same request through v2 and v3 and you see precisely what an
+orchestrator buys and what it costs.
+
+**Why it matters.** The answer is usually *"less than you'd think, and more than
+you'd like"* — and in this repo's own numbers, the fashionable choice loses:
+**v3's self-correcting orchestrator costs more tokens than v5's live browsing**,
+and its bill changes between identical requests. That is not a thing you can
+learn from a blog post. It is a thing you learn by building both and measuring.
+
+The travel planning is the workload, not the point. It was chosen because it
+decomposes honestly (weather, budget, hotels and attractions really are
+independent, so the fan-out is not contrived), it has a real correctness signal
+(a budget is right or wrong, in rupees), and it has a legitimate reason to touch
+the live web.
+
+---
+
+## Key Features
+
+| Feature | What it does |
+|---|---|
+| **Five architectures, one server** | v1 → v5 registered as five assistants on one Aegra instance. Switch with one API field; no redeploy, no branch |
+| **Runtime version switching** | The UI's architecture drawer changes `assistant_id`. The same brief can be run through two topologies back to back |
+| **Reproducible benchmarks** | `scripts/measure_versions.py` drives all five over HTTP and reports wall clock, agent time, calls and tokens. The table below is its output |
+| **Human-in-the-loop, per section** | v4 returns the plan as commentable sections. A comment routes to its specialist through a dictionary lookup — **zero orchestrator calls** |
+| **Live browser you can watch** | v5 drives a real headed Chromium; every navigation, click and refusal streams to the UI as an event plus a screenshot |
+| **Human takeover of the browser** | When a site wants a login, the run blocks and hands you the live browser. Clicking the screenshot clicks the real page |
+| **Booking to the payment boundary** | Walks an approved plan to a real booking page for a named hotel — and stops. Never enters payment details, under any configuration |
+| **Six MCP servers, two lifetimes** | Playwright, a purpose-built `travel-mcp`, Fetch, Tavily, memory and time — stateless ones per call, the browser held across a session |
+| **Cross-trip memory** | A knowledge graph over MCP, so the second trip starts knowing where you have already been |
+| **Model tiering** | Ten agents mapped to Nova Pro / Lite / Micro by how hard the job is, with a repair-and-escalate loop for structured output |
+| **Storage that reclaims itself** | A finished trip keeps its plan and deletes everything that produced it — ~110 KB per run |
+| **Runs natively, no Docker** | Four ordinary processes on an ordinary host. Deployable on a locked-down machine with no container runtime |
+| **Three-tier test suite** | 631 hermetic · 18 serving (real Aegra + Postgres, in CI) · 20 live. Type-checked, linted and formatted on every push |
 
 ---
 
 ## Why five?
 
-Most agent projects show you one architecture and assert it is the right one.
-The assertion is unfalsifiable: there is nothing to compare it against.
-
-This one ships **five working systems**, each adding exactly one idea to the one
-before it, all registered with the same server. Switching between them is one
-field in an API call — not a redeploy, not a branch. So you can put the same
-request through v2 and v3 and see precisely what an orchestrator buys, and what
-it costs.
-
-The answer is usually *"less than you'd think, and more than you'd like"*, which
-is the sort of thing you can only learn by measuring.
-
-### The versions
+Every version is cumulative: **v5 is v1 with four more ideas in it.**
 
 | Version | Adds | Agents | The idea |
 |---|---|---|---|
@@ -33,8 +121,6 @@ is the sort of thing you can only learn by measuring.
 | **v3** `v3_orchestrator` | a reviewer, an orchestrator, memory | 10 | The plan audits itself and re-runs what's wrong. And it remembers you, so the second trip starts better than the first |
 | **v4** `v4_hitl` | section-level review | 10 | The plan arrives as sections you mark up. A comment pinned to one routes to its specialist with **no model call** |
 | **v5** `v5_mcp` | six MCP servers, a live browser | 10 | Real browsing you watch and can take over, ending on a real booking page |
-
-Every version is cumulative: **v5 is v1 with four more ideas in it.**
 
 ### Measured, not claimed
 
@@ -84,95 +170,45 @@ hotel listing. It is the one version where the slow part isn't the model.
 
 ---
 
-## Aegra is the deployment
+## Tech Stack
 
-There is no application server in this project. **Aegra is it.**
-
-[Aegra](https://github.com/ibbybuilds/aegra) is a self-hosted implementation of
-the **Agent Protocol** — the same HTTP surface LangGraph Platform speaks
-(assistants, threads, runs, streaming, interrupts, checkpoints), running on your
-own machine against your own PostgreSQL. You point it at a `aegra.json`, it
-loads your graphs, and it serves them.
-
-```jsonc
-{
-  "graphs": {
-    "v1_linear":       "./src/travel_planner/versions/v1_linear/graph.py:graph",
-    "v2_parallel":     "./src/travel_planner/versions/v2_parallel/graph.py:graph",
-    "v3_orchestrator": "./src/travel_planner/versions/v3_orchestrator/graph.py:graph",
-    "v4_hitl":         "./src/travel_planner/versions/v4_hitl/graph.py:graph",
-    "v5_mcp":          "./src/travel_planner/versions/v5_mcp/graph.py:make_graph"
-  },
-  "auth": { "path": "./src/travel_planner/auth/handler.py:auth" },
-  "http": { "app": "./src/travel_planner/routes/custom.py:app" }
-}
-```
-
-That file is the entire deployment descriptor. Five graphs become five
-assistants; a client picks one with `assistant_id` and gets streaming, pausing
-and checkpointing for free.
-
-### What Aegra actually gives you here
-
-| It provides | Which is why this project can… |
-|---|---|
-| **Assistants** — one per graph | offer a version switcher instead of five deployments |
-| **Threads + Postgres checkpoints** | pause a run for a human review and resume it days later |
-| **SSE run streaming** | show agents lighting up, and stream browser screenshots on the same connection |
-| **`interrupt()` / `Command(resume=…)`** | implement v4's section review as protocol, not as a bespoke queue |
-| **Custom route mounting** | serve `/versions`, `/handover`, `/trips` from the same process, same auth |
-| **Pluggable auth** | scope threads to an owner without touching graph code |
-
-### Static graphs versus a factory graph
-
-The one Aegra detail worth understanding, because v5 depends on it:
-
-```python
-# v1–v4: compiled once, cached by Aegra, reused for every request.
-graph = build().compile(name=VERSION)
-
-
-# v5: a factory. Aegra refuses to cache these and re-invokes per request.
-async def make_graph(config: RunnableConfig | None = None):
-    settings = settings_for_run(config)  # per-request overrides
-    return build(settings=settings).compile(name=VERSION)
-```
-
-Two things follow, and both are load-bearing:
-
-- **Per-run resource lifetime.** MCP servers and the browser are contacted
-  *inside* the run that needs them, not pinned open at server startup.
-- **Per-request configuration.** A caller can pass `configurable.mcp_servers` or
-  `configurable.mcp_mode` on a single run and get a graph wired to those,
-  without a redeploy.
-
-> **Why the Python floor is 3.12.** Aegra 0.10 requires it. On 3.11 the resolver
-> silently picks Aegra **0.6**, which calls graph factories once and caches the
-> result — and v5's entire design is a graph built per request. It isn't a
-> version warning, it's a different product. `scripts/preflight.sh` checks this
-> explicitly.
-
-### Why no Docker
-
-`aegra dev` provisions PostgreSQL in a container. Pointing `DATABASE_URL` at a
-native instance and using `aegra serve` skips that entirely, so the whole stack
-is four ordinary processes on an ordinary host — no daemon, no registry, no
-compose file to keep in sync. On a locked-down machine that is often the
-difference between deployable and not.
+| Layer | Technology | Why |
+|---|---|---|
+| **Agent runtime** | LangGraph 1.2 | `StateGraph`, `interrupt()`/`Command(resume=)`, list-form fan-in, custom event streaming |
+| **Agent server** | **Aegra 0.10** (Agent Protocol) | Self-hosted assistants, threads, runs, SSE, checkpoints — the whole deployment |
+| **Models** | AWS Bedrock — Amazon Nova Pro / Lite / Micro | Tiered per agent; Llama 3.3 70B as the escalation fallback |
+| **Model access** | `langchain-aws` `ChatBedrockConverse` | One Converse API across every model family |
+| **Tools** | Model Context Protocol — 6 servers | Playwright, `travel-mcp` (own), Fetch, Tavily, memory, time |
+| **Browser** | Playwright MCP, **headed** Chromium | Headless is refused by the booking sites |
+| **Database** | PostgreSQL 18 + pgvector (native) | Checkpoints, threads, archived trips |
+| **Queue** | Redis (optional) | Run queueing when configured; browsers are capped separately |
+| **Frontend** | Next.js 16 · React 19 · Tailwind 4 · TypeScript | Route-handler proxy means no CORS anywhere |
+| **Validation** | Pydantic v2 + `pydantic-settings` | Every agent returns a validated schema, not prose |
+| **Packaging** | `uv` | Lockfile-driven, reproducible installs |
+| **CI/CD** | GitHub Actions — 3 jobs | Backend (lint, format, mypy, 631 tests), Frontend (tsc, eslint, build), Serving layer (real Postgres + Aegra) |
+| **Quality** | ruff · mypy · pytest | Lint, format and types all blocking |
+| **Deployment** | systemd, native | Three units; no Docker, no compose file |
 
 ---
 
-## How it's wired
+## System Architecture
+
+Four processes on one host. Only the frontend's port is reachable — Aegra,
+PostgreSQL and the browser server all stay on loopback, and the frontend proxies
+to them through its own Next.js route handlers, which is also why there is no
+CORS configuration anywhere in the project. Aegra loads the five graphs from
+`aegra.json`, supplies each with a Postgres-backed checkpointer, and mounts this
+project's custom FastAPI routes on the same port under the same auth.
 
 ```mermaid
 flowchart TB
     subgraph browser["Your browser"]
-        UI["Next.js 16 · four views<br/>Plan · Live · The plan · History"]
+        UI["Next.js 16 · five views<br/>Plan · Live · The plan · History · About"]
     end
 
     subgraph host["One host"]
         RH["Route handlers<br/>/api/aegra/* — the only exposed port"]
-        AEGRA["<b>Aegra</b> — Agent Protocol<br/>assistants · threads · runs · SSE"]
+        AEGRA["<b>Aegra</b> — Agent Protocol<br/>assistants · threads · runs · SSE · interrupts"]
         PG[("PostgreSQL 18 + pgvector<br/>checkpoints · threads · trips")]
 
         subgraph GRAPHS["LangGraph — five topologies, one state schema"]
@@ -195,11 +231,12 @@ flowchart TB
     V5 -.->|per-run session| MCP
 ```
 
-Only the frontend's port is reachable. Aegra, PostgreSQL and the browser server
-all stay on loopback, and the frontend proxies to them through its own route
-handlers — which is also why there is no CORS configuration anywhere.
+## Application Flow
 
-### A run, end to end
+From brief to booking page. Note two different pauses: the section review
+**checkpoints and stops** (answerable days later), while the browser handover
+**blocks a live run** (because stopping it would close the Chromium you were
+about to take over).
 
 ```mermaid
 sequenceDiagram
@@ -221,12 +258,132 @@ sequenceDiagram
 
     G-->>A: interrupt(sections + audit + history)
     A-->>UI: status: interrupted
-    Note over A,G: checkpointed in Postgres
+    Note over A,G: checkpointed in Postgres — resumable days later
     U->>UI: comment on "Budget"
     UI->>A: Command(resume=[{type:"comments", …}])
     A->>G: continue — re-runs `budget` only
-    G-->>A: final plan
+
+    G-->>A: interrupt(booking_offer)
+    U->>UI: "open real booking pages"
+    G->>B: search → compare → select room
+    B-->>G: login wall
+    Note over G,B: run BLOCKS, holding the browser open
+    U->>UI: signs in through the live screenshot
+    UI->>A: POST /handover/{id}/release
+    G->>B: continues to the booking page, stops at payment
+    G-->>A: final plan + live prices
 ```
+
+---
+
+## Aegra is the deployment
+
+There is no application server in this project. **Aegra is it.**
+
+[Aegra](https://github.com/ibbybuilds/aegra) is a self-hosted implementation of
+the **Agent Protocol** — the same HTTP surface LangGraph Platform speaks
+(assistants, threads, runs, streaming, interrupts, checkpoints), running on your
+own machine against your own PostgreSQL. You point it at an `aegra.json`, it
+loads your graphs, and it serves them.
+
+```jsonc
+{
+  "dependencies": ["./src"],
+  "graphs": {
+    "v1_linear":       "./src/travel_planner/versions/v1_linear/graph.py:graph",
+    "v2_parallel":     "./src/travel_planner/versions/v2_parallel/graph.py:graph",
+    "v3_orchestrator": "./src/travel_planner/versions/v3_orchestrator/graph.py:graph",
+    "v4_hitl":         "./src/travel_planner/versions/v4_hitl/graph.py:graph",
+    "v5_mcp":          "./src/travel_planner/versions/v5_mcp/graph.py:make_graph"
+  },
+  "auth": { "path": "./src/travel_planner/auth/handler.py:auth" },
+  "http": { "app":  "./src/travel_planner/routes/custom.py:app" }
+}
+```
+
+That file is the entire deployment descriptor. Five graphs become five
+assistants; a client picks one with `assistant_id` and gets streaming, pausing
+and checkpointing for free.
+
+### What Aegra actually gives you here
+
+| It provides | Which is why this project can… |
+|---|---|
+| **Assistants** — one per graph | offer a version switcher instead of five deployments |
+| **Threads + Postgres checkpoints** | pause a run for a human review and resume it days later |
+| **SSE run streaming** | show agents lighting up, and stream browser screenshots on the same connection |
+| **`interrupt()` / `Command(resume=…)`** | implement v4's section review as protocol, not as a bespoke queue |
+| **Custom route mounting** | serve `/versions`, `/handover`, `/trips` from the same process, same auth |
+| **Pluggable auth** | scope threads to an owner without touching graph code |
+
+### The relationship is inverted
+
+Across all of `src/`, Aegra is imported **exactly once** — a namespace constant,
+with a fallback if that import ever moves. The project does not call Aegra;
+Aegra calls the project.
+
+The clearest evidence is the checkpointer. Every graph compiles bare:
+
+```python
+graph = build().compile(name=VERSION)
+```
+
+No `checkpointer=` anywhere in production code — the only `MemorySaver()` in the
+repo is in tests, precisely because tests run *without* Aegra. So v4's
+`interrupt()`, resuming a review days later, and thread state surviving a
+restart all work because Aegra injects Postgres-backed checkpointing into a graph
+that never asked for one.
+
+That inversion is why a compiled graph costs **117 KB** and adding a sixth
+architecture would cost roughly that.
+
+### Static graphs versus a factory graph
+
+The one Aegra detail worth understanding, because v5 depends on it:
+
+```python
+# v1-v4: compiled once, cached by Aegra, reused for every request.
+graph = build().compile(name=VERSION)
+
+
+# v5: a factory. Aegra refuses to cache these and re-invokes per request.
+async def make_graph(config: RunnableConfig | None = None):
+    settings = settings_for_run(config)  # per-request overrides
+    return build(settings=settings).compile(name=VERSION)
+```
+
+At boot, Aegra imports all five modules and then splits them:
+
+```text
+declared in aegra.json : ['v1_linear', 'v2_parallel', 'v3_orchestrator', 'v4_hitl', 'v5_mcp']
+COMPILED, held resident: ['v1_linear', 'v2_parallel', 'v3_orchestrator', 'v4_hitl']
+factories, NOT called  : ['v5_mcp']
+```
+
+Two things follow, and both are load-bearing:
+
+- **Per-run resource lifetime.** MCP servers and the browser are contacted
+  *inside* the run that needs them, not pinned open at server startup.
+- **Per-request configuration.** A caller can pass `configurable.mcp_servers` or
+  `configurable.mcp_mode` on a single run and get a graph wired to those,
+  without a redeploy.
+
+A practical consequence: editing v1–v4 needs a server restart, because their
+compiled graph is cached. Editing v5 does not.
+
+> **Why the Python floor is 3.12.** Aegra 0.10 requires it. On 3.11 the resolver
+> silently picks Aegra **0.6**, which calls graph factories once and caches the
+> result — and v5's entire design is a graph built per request. It isn't a
+> version warning, it's a different product. `scripts/preflight.sh` checks this
+> explicitly.
+
+### Why no Docker
+
+`aegra dev` provisions PostgreSQL in a container. Pointing `DATABASE_URL` at a
+native instance and using `aegra serve` skips that entirely, so the whole stack
+is four ordinary processes on an ordinary host — no daemon, no registry, no
+compose file to keep in sync. On a locked-down machine that is often the
+difference between deployable and not.
 
 ---
 
@@ -255,20 +412,19 @@ genuinely don't exist when an early node runs, and without `NotRequired`
 Pydantic fails with "Field required" the first time a node sees the state —
 which LangGraph surfaces as a blank error.
 
-**And the module must never use `from __future__ import annotations`,** which
-turns annotations into strings and makes `TypedDict` silently mark every key
-required again. An AST-based test guards it.
+**The module must not use `from __future__ import annotations`.** It turns every
+annotation into a string, and `TypedDict` resolves `NotRequired` at class-creation
+time — so with it, every key silently lands in `__required_keys__` and the above
+breaks again, invisibly.
 
 ### v3's targeted re-run, through a static fan-in
 
-LangGraph's list-form join `add_edge([a, b, c, d], target)` fires when all four
-complete — right for the first pass, but it cannot wait for a *subset*. So a
-revision that should re-run only `hotel` can't just route to `hotel`.
-
-The answer is to route to the whole fan-out layer and let each node gate itself:
+The orchestrator decides which specialists to re-run. But a LangGraph fan-in
+waits for *every* incoming edge, so a node that simply doesn't execute stalls the
+join forever. The fix is that skipped nodes still run — and return nothing:
 
 ```python
-def rerun_aware(agent: BaseAgent):
+def rerun_aware(agent: BaseAgent) -> Node:
     def node(state: TripState) -> dict[str, Any]:
         decision = state.get("orchestrator_decision")
         if decision is None:
@@ -284,35 +440,30 @@ def rerun_aware(agent: BaseAgent):
     return node
 ```
 
-Skipped nodes still complete, so the join fires exactly as on the first pass.
-Dependencies are declared once (`packing` consumes `weather`; `hotel` consumes
-`budget`) rather than encoded in edges.
+`DEPENDS_ON` is what makes a correction coherent: commenting on *hotels* re-runs
+`hotel`, and also `itinerary` (an itinerary that cites a hotel is stale the
+moment the hotel changes) and `review` (an audit of the old draft no longer
+describes the new one).
 
 ### Two kinds of pause, and why they are different
 
-This is the sharpest design point in the project.
+| | v4 section review | v5 browser handover |
+|---|---|---|
+| Mechanism | `interrupt()` | in-process blocking queue |
+| Run state | stopped, checkpointed | **alive**, holding a browser |
+| Answerable | days later | minutes — it expires |
+| Survives restart | yes | no |
 
-```
-v4 plan review   →  interrupt()      →  run STOPS, state persists, answer in days
-v5 browser handover → blocking queue →  run CONTINUES, because the browser must
-```
-
-`interrupt()` raises out of the node. LangGraph checkpoints and the run stops —
-perfect for a plan review, where nothing is held open. **A browser handover
-cannot work that way:** the node is holding a live Chromium with a half-finished
-login in it, and unwinding closes exactly the thing you were about to take over.
-
-So a handover keeps the node running and blocks on an in-process queue. Two
-consequences, both deliberate: it is **time-bounded** (a blocked node holds one
-of very few browser slots) and the queue is **in-process** (routing a click to a
-worker that doesn't hold the Chromium accomplishes nothing).
+A handover cannot use `interrupt()`: stopping the run would close the Chromium
+you were about to take over. So the run stays alive and blocks — which is
+exactly why a handover expires after five minutes and a plan review does not.
 
 ---
 
 ## The agents, and model tiering
 
-Ten specialists. A specialist is four class attributes and one method — the
-rest (messages, invocation, repair, escalation, telemetry, failure handling) is
+Ten specialists. A specialist is four class attributes and one method — the rest
+(messages, invocation, repair, escalation, telemetry, failure handling) is
 shared, so it's implemented and tuned once.
 
 ```python
@@ -329,54 +480,31 @@ class WeatherAgent(BaseAgent):
 An agent instance *is* a valid LangGraph node: `graph.add_node("weather", WeatherAgent())`.
 **Versions differ in how nodes are wired, not in the nodes.**
 
-| Tier | Model | Agents | Why |
-|---|---|---|---|
-| high | `us.amazon.nova-pro-v1:0` | orchestrator, review, itinerary | routing decisions, auditing, multi-day synthesis |
-| mid | `us.amazon.nova-lite-v1:0` | destination, hotel, attraction, budget | moderate reasoning with structured output |
-| low | `us.amazon.nova-micro-v1:0` | weather, packing, customs | extraction-shaped; text-only is enough |
-| fallback | `us.meta.llama3-3-70b-instruct-v1:0` | any agent that needs it | cross-family escape hatch, per agent |
+| Agent | Tier | Model | Returns | Why this tier |
+|---|---|---|---|---|
+| `orchestrator` | high | `us.amazon.nova-pro-v1:0` | `OrchestratorDecision` | routing decisions from prose |
+| `review` | high | `us.amazon.nova-pro-v1:0` | `Review` | auditing a plan against a brief |
+| `itinerary` | high | `us.amazon.nova-pro-v1:0` | `Itinerary` | multi-day synthesis |
+| `destination` | mid | `us.amazon.nova-lite-v1:0` | `DestinationChoice` | moderate reasoning, structured output |
+| `hotel` | mid | `us.amazon.nova-lite-v1:0` | `HotelList` | |
+| `attraction` | mid | `us.amazon.nova-lite-v1:0` | `AttractionList` | |
+| `budget` | mid | `us.amazon.nova-lite-v1:0` | `BudgetBreakdown` | |
+| `weather` | low | `us.amazon.nova-micro-v1:0` | `WeatherReport` | extraction-shaped; text-only is enough |
+| `packing` | low | `us.amazon.nova-micro-v1:0` | `PackingList` | |
+| `customs` | low | `us.amazon.nova-micro-v1:0` | `LocalCustoms` | |
 
 ### Structured output that survives a small model
 
-Every agent returns a validated Pydantic object, never prose. `with_structured_output()`
-is tool-calling under the hood, and tool-calling degrades sharply with nesting —
-so **every output schema is at most one level deep.** That's a correctness
-measure, not a style preference.
+`with_structured_output()` is tool-calling underneath, and tool-calling
+reliability degrades sharply with nesting depth — more so on small models. Two
+rules follow, and both are correctness measures rather than style:
 
-When one fails anyway, three things happen in order:
-
-1. **Repair** — feed the validation error back so the model sees which field was wrong.
-2. **Escalate** — retry on the next tier up. Micro → Lite → Pro → cross-family.
-3. **Fail loudly** — `StructuredOutputError` carries every (model, error) pair.
-
-Two schema-level lessons are baked in, both from live failures:
-
-```python
-class BudgetBreakdown(BaseModel):
-    hotel: float = Field(ge=0)
-    ...
-    currency: Literal["INR"] = "INR"  # a Literal, not a default — see below
-
-    @model_validator(mode="after")
-    def _recompute_total(self):
-        computed = round(
-            self.hotel + self.food + self.transport + self.activities + self.miscellaneous, 2
-        )
-        if computed <= 0:
-            raise ValueError("the budget is empty — every category is zero…")
-        object.__setattr__(self, "total", computed)
-        return self
-```
-
-- **The total is derived, never trusted.** An agent once anchored every category
-  correctly and returned a total of ₹4,050 against a true sum of ₹35,440. Asking
-  a language model for a number you can compute is inviting a failure you never
-  had to have.
-- **The currency is a `Literal`, not a default.** A default only applies when a
-  field is *omitted*, and it wasn't — the model returned `USD` while another
-  agent wrote rupees in its prose. Two currencies in one plan, no error
-  anywhere. Now the wrong answer is unrepresentable and the repair loop turns it
-  into a retry.
+1. **Output schemas are at most one level deep.** Flat shapes, always.
+2. **A repair-then-escalate loop.** A malformed response is retried once with the
+   validation error fed back; if it still fails, the call escalates a tier. The
+   telemetry records `repairs` and `escalated` per call — so the live suite can
+   assert an agent passed *without* the safety net, rather than quietly costing
+   more forever.
 
 ---
 
@@ -385,13 +513,30 @@ class BudgetBreakdown(BaseModel):
 | Server | Transport | Provides |
 |---|---|---|
 | **Playwright** | stdio (or http) | a real, **headed** Chromium |
-| **travel-mcp** | stdio | 10 tools: 32 Indian cities with IRCTC/airport codes, rail fares, hotel GST slabs, festivals, seasons, visa rules, flight bands |
+| **travel-mcp** | stdio | 10 tools, written for this project (below) |
 | **Fetch** | stdio | structured HTTP where a browser is overkill — today's USD→INR rate |
 | **Tavily** | streamable-http | hosted search |
 | **memory** | stdio | the traveller's knowledge graph |
 | **time** | stdio | the current time in Asia/Kolkata, so "next November" means something |
 
-The distinction that cost the most to find:
+### travel-mcp — the domain server
+
+A standalone MCP server in `mcp-servers/travel-mcp/`, usable by any MCP client:
+
+| Tool | Returns |
+|---|---|
+| `get_indian_city_info` | 32 Indian cities with IRCTC station and airport codes |
+| `estimate_domestic_travel` | rail/road/air options between two Indian cities |
+| `estimate_bus_fare` | intercity coach bands |
+| `estimate_flight_cost` | domestic and international fare bands |
+| `estimate_trip_budget` | a costed breakdown including hotel GST slabs |
+| `check_festivals` | festival dates by month and region |
+| `get_weather_forecast` | seasonal expectations by city and month |
+| `convert_currency` | live conversion |
+| `check_visa_requirements` | rules by passport and destination |
+| `search_destinations_catalog` | catalogue search by interest and season |
+
+### The distinction that cost the most to find
 
 **Stateless servers** go through `get_tools()`, which opens and closes a session
 per call. Every call is independent; no subprocess is held between uses.
@@ -409,6 +554,68 @@ the whole sequence.
 > pages as much as their deep links. That's client fingerprinting, not rate
 > limiting. The same navigation headed loads both. On a server with no display,
 > `xvfb-run` supplies one.
+
+---
+
+## Human-in-the-loop
+
+v4's whole argument is that **you are cheaper than an orchestrator**, and more
+precise.
+
+### How a review works
+
+The plan is returned as sections, each carrying the specialist that owns it. You
+comment on the ones you want changed:
+
+```bash
+# The run pauses. Read what it is offering:
+curl -s localhost:2026/threads/$TID/state | jq '.tasks[0].interrupts[0].value'
+# → { "type": "section_review", "sections": [ {"key": "hotels", "owner": "hotel"}, … ] }
+
+# Answer it — comment on two sections at once:
+curl -sX POST localhost:2026/threads/$TID/runs/wait \
+  -H 'Content-Type: application/json' \
+  -d '{"assistant_id": "'$AID'", "command": {"resume": [{
+        "type": "comments",
+        "args": {"comments": [
+          {"section": "hotels",      "comment": "lower the tier, this is over budget"},
+          {"section": "attractions", "comment": "fewer temples on day 2, add a food market"}
+        ]}}]}}'
+```
+
+**Measured behaviour of exactly that call:** the draft paused at 20.0s offering
+10 sections, 8 of them commentable. Two comments re-ran exactly four nodes in
+12.0s — `attraction` and `hotel` because they were named, then `itinerary` and
+`review` because of `DEPENDS_ON`. **Zero orchestrator calls.** The run then
+pauses again showing the revised plan; accepting finalises in 2.0s.
+
+### The five decisions
+
+| `type` | Effect |
+|---|---|
+| `accept` | finalise the plan as it stands |
+| `comments` | re-run the specialists behind the sections you commented on |
+| `edit` | apply a direct edit to the plan |
+| `response` | answer a question the reviewer raised |
+| `ignore` | proceed without addressing the review |
+
+A pause only accepts the subset it offered. Answering a plan review with v5's
+`book` or `skip` is rejected with a message naming the valid options, rather
+than raising a validation error from inside a node halfway through a run.
+
+### Revision history
+
+Every round is recorded — what was asked for, which specialists it moved, and
+when — so a finished plan can account for itself:
+
+```json
+[
+  {"iteration": 0, "decision": "comments", "agents_rerun": ["attraction", "hotel"]},
+  {"iteration": 1, "decision": "accept",   "agents_rerun": []}
+]
+```
+
+Without this the fourth draft looks exactly like the first.
 
 ---
 
@@ -436,8 +643,25 @@ browsing it's showing.
 When a page needs a person, the run stops and offers you the browser. **Clicking
 the screenshot clicks the real page**: screenshots are viewport-sized at
 devicePixelRatio 1, so image pixels and page coordinates are the same numbers.
-There are controls for typing, Enter, Tab, scrolling and Back, and the run
-continues when you say you're done.
+
+The action set is **closed** — eleven verbs, and anything else is refused rather
+than reinterpreted:
+
+```text
+navigate  click  click_at  type  type_at  press
+scroll    select  back     wait  snapshot
+```
+
+Driving it by hand, if you want to script a takeover:
+
+```bash
+curl -s localhost:2026/handover | jq                    # who is waiting
+curl -s localhost:2026/handover/$TID | jq               # url, title, what is clickable
+curl -sX POST localhost:2026/handover/$TID/action \
+  -H 'Content-Type: application/json' \
+  -d '{"kind": "click_at", "x": 412, "y": 388}'
+curl -sX POST localhost:2026/handover/$TID/release      # give it back; the run continues
+```
 
 Typed text **never** reaches the action log — someone taking over a login types
 into the same browser the log is describing, so it records *"12 characters into
@@ -447,37 +671,55 @@ Password"* and never the characters.
 
 Two browsing strategies, because they answer different questions:
 
-```
+```text
 browser.py   a fixed choreography — right when you know which page has the answer
 agent.py     look, decide, act, look again — right when you don't
 ```
 
-The agent is a bounded loop: a **closed action set**, a step budget, a clock,
-and structured decisions with the repair loop behind them. The login/payment
-gate runs **before** the model is consulted and overrides it — a model must not
-be able to decide to type into a password field.
+The agent is a bounded ReAct loop: a **closed action set**, a step budget
+(`BROWSER_AGENT_MAX_STEPS`, default 22), a clock, and structured decisions with
+the repair loop behind them. The login/payment gate runs **before** the model is
+consulted and overrides it — a model must not be able to decide to type into a
+password field.
 
 It works. From a hotel listing:
 
-```
+```text
 1. click "Lemon Tree Hotel Agra"  → opened a new tab
 2. click "VIEW 51 ROOM OPTIONS"   → nothing changed, try a different one
 3. click "SELECT"                 → you are now on /hotels/nhotel-booking/?…
                                   → reached a payment page — this needs you
 ```
 
+A representative result, read straight out of thread state:
+
+```json
+{
+  "site": "goibibo",
+  "url": "https://www.goibibo.com/hotels/nhotel-booking/?...&hotelId=201402131646554",
+  "title": "Hotels in Agra Book from 429 Hotels",
+  "ok": true,
+  "prices": 12,
+  "note": "goibibo is showing 12 live prices, from about Rs 889. It reached the payment page — that part is yours."
+}
+```
+
 **12 consecutive runs end on goibibo's booking page for a named hotel.**
+
+Why goibibo first: it is the one that reliably reaches a booking page. Agoda,
+Booking.com and MakeMyTrip are continuations. IRCTC is not attempted — it has a
+CAPTCHA, and this project does not solve CAPTCHAs.
 
 ---
 
 ## Memory: the second trip starts better than the first
 
 What separates v3 from v2 is that facts survive a run. A `recall` node sits
-between the destination and the fan-out; a `remember` node runs after the plan
-is finalised — and only when there *is* a plan, because an abandoned run says
+between the destination and the fan-out; a `remember` node runs after the plan is
+finalised — and only when there *is* a plan, because an abandoned run says
 nothing true about anyone.
 
-```
+```text
 trip 1 → Jaipur.  Known about this traveller: nothing yet.
 trip 2 → Goa.     Known about this traveller: travels from Delhi; books at a
                   budget level; interested in history; has already travelled
@@ -489,12 +731,15 @@ search returns only the traveller node — silently excluding every destination
 they've visited, so *"somewhere I haven't been"*, the single most useful thing
 memory enables, could never have worked.
 
+> This is a **shared** memory graph on a shared instance: what your trips teach
+> it, the next person's plans inherit.
+
 ---
 
 ## Storage that cleans up after itself
 
-A finished trip keeps its plan and **deletes everything that produced it** —
-a few kilobytes kept, roughly 110 KB reclaimed per run.
+A finished trip keeps its plan and **deletes everything that produced it** — a
+few kilobytes kept, roughly 110 KB reclaimed per run.
 
 ```bash
 curl -s localhost:2026/admin/storage | jq     # what's being held
@@ -502,8 +747,8 @@ curl -sX POST localhost:2026/admin/sweep | jq # clear abandoned runs now
 ```
 
 Abandoned runs are the growth nobody notices: someone opens the planner, changes
-their mind, closes the tab. An hourly sweeper clears those. Verified: both
-archived trips have **0 thread rows and 0 checkpoints**.
+their mind, closes the tab. An hourly sweeper clears those. Verified: archived
+trips have **0 thread rows and 0 checkpoints**.
 
 > `purge_thread` deletes `checkpoint_writes`, `checkpoint_blobs` and
 > `checkpoints` explicitly. There are no foreign keys between them — they do
@@ -511,20 +756,31 @@ archived trips have **0 thread rows and 0 checkpoints**.
 
 ---
 
-## Getting started
+## Getting Started
+
+### Prerequisites
+
+| Requirement | Version | Notes |
+|---|---|---|
+| Python | **≥ 3.12** | 3.11 silently resolves Aegra 0.6 and breaks v5 |
+| Node.js | ≥ 22 | for the frontend and the stdio MCP servers |
+| PostgreSQL | 18 | native; pgvector alongside it |
+| `uv` | latest | [install](https://docs.astral.sh/uv/) |
+| AWS account | — | Bedrock access to Amazon Nova in `us-east-1` |
+| Tavily API key | optional | only if you enable the `tavily` MCP server |
+
+### Install and run
 
 ```bash
-# 0. Prerequisites: Python ≥ 3.12, Node ≥ 22, PostgreSQL 18, uv
+# 1. Clone and install Python dependencies (creates .venv)
 git clone https://github.com/adarshcod30/Travel-Planner-Agent
 cd Travel-Planner-Agent
-
-# 1. Python deps (creates .venv)
 uv sync
 
-# 2. Configure — add your AWS keys or set AWS_PROFILE
+# 2. Configure — add your AWS keys, or set AWS_PROFILE
 cp .env.example .env
 
-# 3. PostgreSQL + pgvector (idempotent; installs nothing)
+# 3. PostgreSQL + pgvector (idempotent; installs nothing itself)
 brew install postgresql@18 pgvector      # macOS; apt equivalents on Linux
 ./scripts/bootstrap_postgres.sh
 
@@ -544,6 +800,17 @@ Open <http://localhost:3000>. Verify the backend on its own with:
 curl -s localhost:2026/health/deep | jq
 ```
 
+```json
+{
+  "status": "ok",
+  "region": "us-east-1",
+  "models": { "high": "us.amazon.nova-pro-v1:0", "mid": "us.amazon.nova-lite-v1:0", "low": "us.amazon.nova-micro-v1:0" },
+  "graphs": ["v1_linear", "v2_parallel", "v3_orchestrator", "v4_hitl", "v5_mcp"],
+  "agents": 10,
+  "mcp": { "mode": "stdio", "enabled_servers": ["playwright", "fetch", "travel", "tavily", "memory", "time"] }
+}
+```
+
 ### Or start the pieces separately
 
 ```bash
@@ -559,6 +826,19 @@ cd frontend && npm run dev      # terminal 2
 
 Prefer the `.local` address it prints — it survives moving to another network,
 where the IP does not. Only port 3000 needs to be reachable.
+
+### Every script
+
+| Script | Does |
+|---|---|
+| `run_all.sh` | Postgres + Aegra + frontend, in one command |
+| `run_aegra.sh` | Postgres check, migrations, then `aegra serve` |
+| `run_playwright_mcp.sh` | the browser MCP server, for `MCP_MODE=http` |
+| `bootstrap_postgres.sh` | idempotent role/database/extension setup |
+| `preflight.sh` | verifies Python, Node, Postgres, Bedrock reachability — spends nothing |
+| `resolve_bedrock_models.sh` | prints the model IDs your account actually exposes |
+| `measure_versions.py` | the benchmark table at the top of this file |
+| `serve_lan.sh` / `serve_public.sh` | share on a LAN, or through a tunnel |
 
 ---
 
@@ -579,27 +859,238 @@ is one, and Activity / Agents / Sources behind tabs.
 
 **History** — trips that finished. This table is the only record they happened.
 
+**About** — what the project is and how it works, with the version cards read
+live from `/versions` so the page cannot drift from what is running.
+
+### Driving it from the command line
+
+The whole thing is an HTTP API; the UI is one client. A full run in four calls:
+
+```bash
+BASE=http://localhost:2026
+H='Content-Type: application/json'
+
+# 1. Resolve the assistant for the version you want
+AID=$(curl -s -X POST $BASE/assistants/search -H "$H" \
+      -d '{"graph_id":"v4_hitl","limit":1}' | jq -r '.[0].assistant_id')
+
+# 2. Open a thread
+TID=$(curl -s -X POST $BASE/threads -H "$H" -d '{}' | jq -r .thread_id)
+
+# 3. Run it (use /runs/stream for SSE instead)
+curl -s -X POST $BASE/threads/$TID/runs/wait -H "$H" -d '{
+  "assistant_id": "'$AID'",
+  "input": {"request": "forts and street food, reachable by train",
+            "origin": "Delhi", "days": 3, "travelers": 2,
+            "budget_level": "mid-range", "interests": ["history","food"]}
+}' | jq -r '.final_plan // "paused — see thread state"'
+
+# 4. Read where it stopped, then answer it
+curl -s $BASE/threads/$TID/state | jq '.tasks[0].interrupts[0].value.type'
+curl -s -X POST $BASE/threads/$TID/runs/wait -H "$H" \
+  -d '{"assistant_id":"'$AID'","command":{"resume":[{"type":"accept"}]}}' | jq -r .final_plan
+```
+
+Streaming instead, to watch agents and browser frames arrive:
+
+```bash
+curl -N -X POST $BASE/threads/$TID/runs/stream -H "$H" -d '{
+  "assistant_id": "'$AID'",
+  "input": {"request": "beaches, 5 days", "origin": "Mumbai", "days": 5},
+  "stream_mode": ["values", "custom"]
+}'
+```
+
+---
+
+## API Reference
+
+Everything is served on **one port** (`:2026`) under one auth scheme — Aegra's
+Agent Protocol routes and this project's own routes alike.
+
+### Agent Protocol (provided by Aegra)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/assistants/search` | find the assistant for a `graph_id` |
+| `GET` | `/assistants/{assistant_id}` | one assistant |
+| `POST` | `/threads` | open a thread (pass `metadata.graph_id` to bind a schema) |
+| `GET` | `/threads/{id}` | thread metadata |
+| `POST` | `/threads/{id}/runs/wait` | run to completion (or to the next pause) |
+| `POST` | `/threads/{id}/runs/stream` | run with SSE — `stream_mode: ["values","custom"]` |
+| `GET` | `/threads/{id}/state` | current values, and any pending `interrupts` |
+| `POST` | `/threads/{id}/state` | write state directly |
+| `POST` | `/threads/{id}/history` | checkpoint history |
+| `DELETE` | `/threads/{id}` | delete a thread |
+
+### This project's routes
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/versions` | the five graphs described for a version switcher, each with a resolved `assistant_id` |
+| `GET` | `/versions/{graph_id}` | one graph's description |
+| `GET` | `/agents` | every specialist with its model tier |
+| `GET` | `/health/deep` | what Aegra's own `/health` cannot see: models, graphs, MCP, browser capacity |
+| `GET` | `/handover` | every run currently waiting for a person |
+| `GET` | `/handover/{thread_id}` | where the browser is now — url, title, what is clickable |
+| `POST` | `/handover/{thread_id}/action` | run one action against the live browser |
+| `POST` | `/handover/{thread_id}/release` | give the browser back; the run continues |
+| `GET` | `/runs/{thread_id}/frames` | every screenshot for a run, in order |
+| `GET` | `/runs/{thread_id}/frames/{name}` | one screenshot |
+| `POST` | `/trips/complete` | archive a plan and delete everything that produced it |
+| `GET` | `/trips` | finished trips, newest first |
+| `GET` | `/trips/{trip_id}` | one archived trip, with its plan |
+| `DELETE` | `/trips/{trip_id}` | delete an archived trip |
+| `DELETE` | `/trips/thread/{thread_id}` | discard a plan without archiving |
+| `GET` | `/admin/storage` | rows and bytes currently held |
+| `POST` | `/admin/sweep` | purge abandoned threads and orphaned checkpoints |
+
+### Custom stream events
+
+Beyond LangGraph's `values` updates, runs emit `custom` events consumed by the
+Live view:
+
+| Event | Carries |
+|---|---|
+| `agent_started` / `agent_finished` | agent name, tier, duration, tokens |
+| `phase` | a human sentence for what is happening now |
+| `browser_action` | verb, target label, resulting URL |
+| `browser_frame` | a screenshot path plus a note |
+| `needs_human` | reason (`login`, `payment`) and a prompt |
+| `source` | a page the research actually read |
+
 ---
 
 ## Configuration
 
-| Setting | Default | What it controls |
+Everything is environment-driven, read through `pydantic-settings` from `.env`.
+
+### Core
+
+| Setting | Default | Controls |
 |---|---|---|
 | `AWS_REGION` | `us-east-1` | Bedrock region |
+| `AWS_PROFILE` | — | use a named profile instead of keys |
+| `DATABASE_URL` | `postgresql://travel_planner:…@localhost:5432/travel_planner` | Postgres |
+| `AUTH_TYPE` | `noop` | `token` enables a shared bearer token |
+| `AEGRA_API_TOKEN` | — | that token, when `AUTH_TYPE=token` |
+| `DEFAULT_VERSION` | `v5_mcp` | which graph the UI selects first |
+| `LOG_LEVEL` | `INFO` | |
+| `ENV_MODE` | `LOCAL` | `PRODUCTION` switches logs to JSON |
+
+### Models
+
+| Setting | Default | Controls |
+|---|---|---|
+| `BEDROCK_MODEL_TIER_HIGH` | `us.amazon.nova-pro-v1:0` | orchestrator, review, itinerary |
+| `BEDROCK_MODEL_TIER_MID` | `us.amazon.nova-lite-v1:0` | destination, hotel, attraction, budget |
+| `BEDROCK_MODEL_TIER_LOW` | `us.amazon.nova-micro-v1:0` | weather, packing, customs |
+| `BEDROCK_MODEL_TIER_FALLBACK` | `us.meta.llama3-3-70b-instruct-v1:0` | escalation target |
+| `BEDROCK_TEMPERATURE` | `0.3` | |
+| `STRUCTURED_OUTPUT_MAX_REPAIRS` | `1` | retries with the validation error fed back |
+| `STRUCTURED_OUTPUT_ESCALATE_TIER` | `true` | raise a tier when repair fails |
+| `MAX_ORCHESTRATOR_ITERATIONS` | `3` | the revision ceiling |
+
+### MCP and the browser
+
+| Setting | Default | Controls |
+|---|---|---|
 | `MCP_ENABLED_SERVERS` | all six | trim to disable one without code changes |
 | `MCP_MODE` | `stdio` | `http` keeps one browser server alive across runs |
+| `MCP_TOOL_TIMEOUT_SECONDS` | `45` | per-tool ceiling |
 | `PLAYWRIGHT_MCP_HEADLESS` | `false` | headless is refused by the booking sites |
 | `MAX_CONCURRENT_BROWSERS` | `2` | ~1.3 GB each; the limit that actually matters |
 | `BROWSER_SLOT_TIMEOUT_SECONDS` | `180` | how long a run waits for a free browser |
 | `BROWSER_HANDOVER_TIMEOUT_SECONDS` | `300` | how long it holds one open for you |
 | `BROWSER_AGENT_MAX_STEPS` | `22` | a hotel search is legitimately a dozen actions |
+| `BROWSER_AGENT_BUDGET_SECONDS` | `300` | wall-clock ceiling for the browsing loop |
 | `BOOKING_ENABLED` | `true` | whether v5 offers to open real booking pages |
-| `MAX_ORCHESTRATOR_ITERATIONS` | `3` | the revision ceiling |
+| `TAVILY_API_KEY` | — | required only if `tavily` is enabled |
+
+### Storage
+
+| Setting | Default | Controls |
+|---|---|---|
 | `PURGE_THREAD_ON_COMPLETE` | `true` | reclaim a run once its plan is archived |
+| `ABANDONED_THREAD_TTL_DAYS` | `7` | how long an unfinished run survives the sweeper |
 
 The scarce resource is **browsers, not requests** — v1–v4 launch none, so a
 request cap either throttles the cheap versions or lets the expensive one pile
 up. Runs past the cap queue for a slot rather than launching another Chrome.
+
+---
+
+## Deployment & Infrastructure
+
+### Hosting model
+
+Built for **institutional / intranet** deployment: one host, four processes, one
+exposed port. No public tunnel required, no container runtime, no registry.
+
+```mermaid
+flowchart LR
+    U["Colleagues on the network"] -->|":3000 only"| WEB["travel-planner-web<br/>Next.js production build"]
+    WEB -->|"loopback"| AG["travel-planner-aegra<br/>Aegra + LangGraph"]
+    AG --> PG[("postgresql.service")]
+    AG -.->|"MCP_MODE=http"| MCPS["travel-planner-mcp<br/>Playwright browser server"]
+```
+
+### systemd units
+
+Three units in `deploy/systemd/`, ordered so the stack comes up in dependency
+order and restarts on failure:
+
+| Unit | Runs | After |
+|---|---|---|
+| `travel-planner-mcp.service` | `run_playwright_mcp.sh` | `network-online` |
+| `travel-planner-aegra.service` | `run_aegra.sh` (migrations, then serve) | `network-online`, `postgresql`, `…-mcp` |
+| `travel-planner-web.service` | `npm run start` | `network-online`, `…-aegra` |
+
+```bash
+sudo cp deploy/systemd/*.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now travel-planner-{mcp,aegra,web}
+journalctl -u travel-planner-aegra -f
+```
+
+See [INTRANET.md](docs/INTRANET.md) for capacity planning, retention and the
+full runbook.
+
+### CI/CD
+
+Three GitHub Actions jobs on every push and pull request to `main`:
+
+| Job | Gates |
+|---|---|
+| **Backend** | `ruff check` · `ruff format --check` · `mypy src` · 631 hermetic tests — all blocking |
+| **Frontend** | `tsc --noEmit` · `eslint --max-warnings 0` · `next build` |
+| **Serving layer** | boots real Aegra against a **PostgreSQL service container**, runs the 18 integration tests |
+
+The serving job exists because the hermetic suite compiles graphs with an
+in-memory checkpointer and calls them directly — fast, and silent about Aegra.
+That job is the one that would notice if the server stopped wiring correctly.
+
+### Environments
+
+| | Local | Intranet |
+|---|---|---|
+| Auth | `AUTH_TYPE=noop` — one shared `local-dev` identity | `AUTH_TYPE=token` + `X-User-Id` |
+| Logs | console renderer, colour | JSON (`ENV_MODE=PRODUCTION`) |
+| Process | `run_all.sh` | three systemd units |
+| Browser | headed on your display | headed under `xvfb-run` |
+
+### Monitoring, logging, scaling
+
+- **Structured logging** via `structlog`, every line carrying `graph_id`,
+  `thread_id`, `run_id` and `user_id`. `httpx` is forced to `WARNING` before
+  anything connects, because Tavily's MCP endpoint carries its API key as a
+  query parameter and INFO-level request logging would write it to disk.
+- **Per-call telemetry** — `AgentRun` records model, tier, duration, tokens,
+  repairs and escalation, and is what both the Live view and the benchmark read.
+- **`/health/deep`** reports what Aegra's own health check cannot: resolved model
+  IDs, MCP server list, browser capacity and free slots.
+- **`/admin/storage`** reports rows and bytes held; **`/admin/sweep`** reclaims.
+- **Scaling** is by browser semaphore, not request count — see Configuration.
 
 ---
 
@@ -635,29 +1126,29 @@ tier that costs money.
 The table at the top of this file comes from `scripts/measure_versions.py`, not
 from any of them.
 
-Ten more are tests of the **repository** rather than the product, because
-each thing they check has already gone wrong once: a tooling directory reaching
-a commit, a credential-bearing file one careless `git add` away, Next 16
-quietly writing an instruction file into the tree on every `npm run dev`, and
-157 screenshots of live browsing sessions riding along in ten commits before
+Ten more are tests of the **repository** rather than the product, because each
+thing they check has already gone wrong once: a tooling directory reaching a
+commit, a credential-bearing file one careless `git add` away, Next 16 quietly
+writing an instruction file into the tree on every `npm run dev`, and 157
+screenshots of live browsing sessions riding along in ten commits before
 anything noticed.
 
 They check *shape* rather than names — "the only markdown at the root is the
 README", not a list of the files today's tools generate — and they ask
-`git check-ignore` rather than searching `.gitignore` for a substring, so what
-is tested is the rule's effect.
+`git check-ignore` rather than searching `.gitignore` for a substring, so what is
+tested is the rule's effect.
 
-One thing to know before editing this file: `ruff format` reaches into
-Python fenced blocks in Markdown, so every snippet in the docs has to be real,
-parseable, canonically-formatted Python. That is a feature — a code
-example that no longer parses fails CI instead of quietly rotting — but it does
-mean hand-aligned `=` signs get collapsed.
+> One thing to know before editing this file: `ruff format` reaches into Python
+> fenced blocks in Markdown, so every snippet in the docs has to be real,
+> parseable, canonically-formatted Python. That is a feature — a code example
+> that no longer parses fails CI instead of quietly rotting — but it does mean
+> hand-aligned `=` signs get collapsed.
 
 ---
 
-## Project structure
+## Project Structure
 
-```
+```text
 ├── aegra.json                    5 graphs → 5 assistants; auth; custom routes
 ├── src/travel_planner/
 │   ├── core/                     state schema, Bedrock tiering, events, storage, money
@@ -671,7 +1162,7 @@ mean hand-aligned `=` signs get collapsed.
 ├── mcp-servers/travel-mcp/       standalone MCP server, 10 tools, Indian travel data
 ├── frontend/src/
 │   ├── app/                      planner, comparison, access gate, Aegra proxy
-│   ├── components/               four views + the browser stage and review panel
+│   ├── components/               five views + the browser stage and review panel
 │   └── lib/                      Aegra client, the run hook, types
 ├── deploy/systemd/               three units for a shared host
 ├── scripts/                      preflight, postgres bootstrap, aegra runner, LAN serving,
@@ -711,14 +1202,69 @@ follow from it:
 - **Typed text is never logged.** The action log records *"12 characters into
   Password"* and never the characters.
 - **The action set is closed.** Instructions arrive over HTTP and aim at a live
-  browser, so anything outside a fixed list — or carrying an unexpected key — is
-  refused rather than reinterpreted.
+  browser, so anything outside the eleven verbs — or carrying an unexpected key —
+  is refused rather than reinterpreted.
 
 The card/UPI check runs **before** any exemption, so an exemption for marketing
 pages can never carry a genuine payment form through with it.
 
 ---
 
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| v5 behaves like v4; no browser opens | Python 3.11 resolved Aegra 0.6, which caches factory graphs. Use ≥ 3.12; `./scripts/preflight.sh` checks this |
+| `net::ERR_HTTP2_PROTOCOL_ERROR` on booking sites | headless Chromium is fingerprinted and refused. Set `PLAYWRIGHT_MCP_HEADLESS=false`; on a headless server use `xvfb-run` |
+| Browser tools succeed but every page is `about:blank` | a session per call. The browser needs `browser_session()` held across the sequence |
+| Runs queue and never start | all browser slots are held. Raise `MAX_CONCURRENT_BROWSERS`, or check `/health/deep` for stuck handovers |
+| A handover expired before I could use it | `BROWSER_HANDOVER_TIMEOUT_SECONDS` (default 300). It cannot be indefinite — a live run is holding a Chromium open |
+| `ValidationError` naming `decision` on resume | a `book`/`skip` answer sent to a plan review. Use `accept`, `comments`, `edit`, `response` or `ignore` |
+| Model access denied | Bedrock model access is per-account, per-region. `./scripts/resolve_bedrock_models.sh` prints what yours exposes |
+| Postgres role or database missing | `./scripts/bootstrap_postgres.sh` — idempotent, safe to re-run |
+
+---
+
+## Roadmap
+
+- [ ] Flight and rail booking flows alongside hotels
+- [ ] Per-user memory graphs instead of one shared instance
+- [ ] A v6 that plans across several trips at once
+- [ ] Replay a recorded browsing session without re-running the browser
+- [ ] Cost estimates shown before a run, from the measured per-version figures
+- [ ] OIDC in place of the shared bearer token
+
+See [open issues](https://github.com/adarshcod30/Travel-Planner-Agent/issues)
+for the full list.
+
+---
+
+## Contributing
+
+Contributions are welcome — issues especially, since the most valuable thing
+here is a case where one of the five versions behaves in a way the numbers don't
+predict.
+
+1. Fork the project
+2. Create a branch (`git checkout -b fix-booking-chain`)
+3. Make the change, and keep the gates green:
+   `uv run ruff check . && uv run ruff format . && uv run mypy src && uv run pytest -m "not live and not integration"`
+4. Push and open a pull request
+
+Two house rules worth knowing before you start: Python snippets inside Markdown
+are formatted by `ruff`, and the repository hygiene tests enforce what may enter
+the tree by *shape* — one README at the root, one dot-directory (`.github`).
+
+---
+
 ## License
 
-MIT
+Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.
+
+---
+
+## Contact
+
+**Adarsh Dwivedi** — [GitHub](https://github.com/adarshcod30)
+
+Project link: <https://github.com/adarshcod30/Travel-Planner-Agent>

@@ -79,18 +79,26 @@ frontend/.next/
 frontend/node_modules/
 frontend/.env.local
 
-# Editor and assistant tooling directories — never committed
-.tooling/
-.cursor/
-.aider*
-.continue/
-.windsurf/
+# Editor and tooling directories at the repository root — never committed.
+# Stated as a shape rather than a list of names: every tool that wants a
+# home here puts it in a dot-directory, and an allowlist of the ones that
+# exist today goes stale the first time a new one appears.
+/.*/
+!/.github/
 
 # Cross-trip memory graph — local state, not source
 data/memory.json
 
-# Assistant scratch files. Next writes these on every dev start unless
-# `agentRules: false` is set in next.config.ts, which it is — this is the
-# second line of defence.
-AGENTS.md
-TOOLING.md
+# Per-run browser screenshots (v5). Written during a run and deleted by
+# `storage._purge_artifacts` when the trip completes — transient by design, and
+# they are frames of real browsing sessions besides. 157 of them reached this
+# repository before this rule existed.
+data/runs/
+
+# Generated instruction files at the root. Next writes one on every dev start
+# unless `agentRules: false` is set in next.config.ts, which it is — this is
+# the second line of defence. Same reasoning as above: the rule is "the only
+# markdown that belongs at the root is the README", which stays true no
+# matter what generates the next one. Documentation lives in docs/.
+/*.md
+!/README.md

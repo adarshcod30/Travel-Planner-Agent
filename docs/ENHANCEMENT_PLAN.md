@@ -1,6 +1,7 @@
 # Enhancement Plan — v2 of the project
 
-**Status:** awaiting approval
+**Status:** delivered — all eleven phases in §8 are built and running. Kept as
+the record of what was planned and what the plan got wrong, not as a roadmap.
 **Supersedes:** the scope in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md), which is delivered
 
 Target: an **institutional deployment** — accessed and used inside a company or
@@ -217,16 +218,30 @@ deliberately, and a layout that does not put everything at one altitude.
 **~26 working days.** Phases 6 and 7 are the genuinely new engineering; 8 is the
 largest single block.
 
+**All eleven are delivered.** The estimate held for everything except 6 and 7,
+which cost far more than three days each — not in writing the browser tools but
+in discovering that four assumptions about reading a page were wrong. That is
+written up in [ARCHITECTURE.md](ARCHITECTURE.md) under "Driving a browser,
+rather than following a script", because the corrections are the interesting
+part and a plan that hid them would be worth less than one that shows them.
+
 ---
 
 ## 9. Open items
 
-1. **Tavily API key** — needed for Phase 2. Goes in `.env`, never committed.
-2. **Booking target sites** — which to support first. IRCTC has a CAPTCHA and
-   needs a login; MakeMyTrip and Goibibo are friendlier to automation. Suggest
-   proving the flow on one aggregator before attempting IRCTC.
-3. **Retention** — runs now also write screenshots. `data/runs/` needs a cleanup
-   policy alongside the Postgres one.
+All four are closed.
+
+1. ~~**Tavily API key**~~ — wired as a streamable-HTTP MCP server. Lives in
+   `.env`, which is gitignored and guarded by a test.
+2. ~~**Booking target sites**~~ — settled by measurement rather than by
+   preference. Goibibo is always the starting point because it is the one that
+   reliably reaches a booking page; Agoda, Booking.com and MakeMyTrip are
+   continuations. IRCTC was not attempted: it has a CAPTCHA, and this project
+   does not solve CAPTCHAs.
+3. ~~**Retention**~~ — `storage._purge_artifacts` deletes a run's screenshot
+   directory when the trip completes, alongside the Postgres cleanup.
+   `data/runs/` is gitignored, and a hygiene test fails if a frame is ever
+   tracked again — which it had been, 157 times, before anything checked.
 4. ~~**Concurrency ceiling**~~ — **done, ahead of the plan.** See §10.
 
 

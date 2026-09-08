@@ -659,7 +659,8 @@ mean hand-aligned `=` signs get collapsed.
 ├── scripts/                      preflight, postgres bootstrap, aegra runner, LAN serving,
 │                                 measure_versions.py (the table at the top)
 ├── tests/                        unit + opt-in live suites
-└── docs/                         architecture, versions, deployment, models, intranet
+└── docs/                         architecture, versions, deployment, models, intranet,
+                                  and the two plans this was built from
 ```
 
 ---
@@ -674,6 +675,8 @@ mean hand-aligned `=` signs get collapsed.
 | [AEGRA_DEPLOYMENT.md](docs/AEGRA_DEPLOYMENT.md) | Why Aegra runs natively rather than in a container |
 | [MODELS.md](docs/MODELS.md) | Tiering, structured-output resilience, cost |
 | [travel-mcp](mcp-servers/travel-mcp/README.md) | The custom MCP server |
+| [DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) | The original plan for the five versions — delivered |
+| [ENHANCEMENT_PLAN.md](docs/ENHANCEMENT_PLAN.md) | The plan for live browsing and takeover, and where it was wrong |
 
 ---
 

@@ -1,0 +1,35 @@
+# The Next.js frontend.
+#
+# It proxies every call to Aegra through its own route handlers, so this is the
+# only thing that needs to be reachable from the intranet — Aegra can stay on
+# localhost. AEGRA_URL is how the two are joined.
+
+[Unit]
+Description=Travel Planner - web interface
+Documentation=https://github.com/adarshcod30/Travel-Planner-Agent
+After=network-online.target travel-planner-aegra.service
+Wants=network-online.target travel-planner-aegra.service
+
+[Service]
+Type=simple
+User=travelplanner
+Group=travelplanner
+WorkingDirectory=/opt/travel-planner/frontend
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=0.0.0.0
+Environment=AEGRA_URL=http://127.0.0.1:2026
+# Set ACCESS_CODE in this file to put the whole site behind a shared code.
+EnvironmentFile=-/opt/travel-planner/frontend/.env.local
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/travel-planner/frontend/.next
+
+[Install]
+WantedBy=multi-user.target

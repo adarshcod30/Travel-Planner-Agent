@@ -1,0 +1,42 @@
+# Playwright MCP as a standing service.
+#
+# The default transport is stdio, where the browser is spawned inside the run
+# that needs it and dies with it — which needs nothing here. This unit is for
+# MCP_MODE=http, where one browser server outlives individual runs so a session
+# (a login, a filled cart) survives between them.
+#
+# Aegra orders itself after this so the browser is up before the first request
+# can ask for it. It is Wants= rather than Requires= on purpose: a v5 run
+# without a browser degrades to a plan with no live research, and that is a
+# better outcome than the whole planner refusing to start.
+
+[Unit]
+Description=Travel Planner - Playwright MCP browser server
+Documentation=https://github.com/adarshcod30/Travel-Planner-Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=travelplanner
+Group=travelplanner
+WorkingDirectory=/opt/travel-planner
+EnvironmentFile=/opt/travel-planner/.env
+ExecStart=/usr/bin/env bash /opt/travel-planner/scripts/run_playwright_mcp.sh
+Restart=on-failure
+RestartSec=5
+
+# A headless Chromium needs a writable home for its profile and cache.
+Environment=HOME=/var/lib/travel-planner
+StateDirectory=travel-planner
+
+# It drives a browser over the network and reads pages; it has no business
+# anywhere else on the disk.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/travel-planner
+
+[Install]
+WantedBy=multi-user.target

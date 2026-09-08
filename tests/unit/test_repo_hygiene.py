@@ -73,3 +73,20 @@ def test_assistant_files_are_ignored():
     ignore = (ROOT / ".gitignore").read_text().splitlines()
     for name in ("AGENTS.md", "TOOLING.md"):
         assert name in ignore, f"{name} is not in .gitignore"
+
+
+def test_the_systemd_units_point_at_scripts_that_exist():
+    """A unit naming a script that was renamed fails at `systemctl start`, on
+    someone else's server, with a message about an exit code."""
+    import re
+
+    units = sorted((ROOT / "deploy" / "systemd").glob("*.service"))
+    assert units, "the deployment units are part of the deliverable"
+    for unit in units:
+        for path in re.findall(r"/opt/travel-planner/(\S+\.sh)", unit.read_text()):
+            assert (ROOT / path).is_file(), f"{unit.name} runs {path}, which does not exist"
+
+
+def test_every_script_is_executable():
+    for script in sorted((ROOT / "scripts").glob("*.sh")):
+        assert script.stat().st_mode & 0o111, f"{script.name} is not executable"

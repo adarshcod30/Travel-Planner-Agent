@@ -6,7 +6,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-cleanup() { [[ -n "${FRONTEND_PID:-}" ]] && kill "$FRONTEND_PID" 2>/dev/null || true; }
+cleanup() {
+  for pid in "${FRONTEND_PID:-}" "${MCP_PID:-}"; do
+    [[ -n "$pid" ]] && kill "$pid" 2>/dev/null
+  done
+  true
+}
 trap cleanup EXIT
 
 if [[ ! -d frontend/node_modules ]]; then
@@ -14,6 +19,13 @@ if [[ ! -d frontend/node_modules ]]; then
   (cd frontend && npm install)
 fi
 [[ -f frontend/.env.local ]] || cp frontend/.env.local.example frontend/.env.local
+
+# Only http mode needs a standing browser server; stdio spawns one per run.
+if grep -qE "^MCP_MODE=http" .env 2>/dev/null; then
+  echo "== MCP_MODE=http — starting the Playwright MCP server"
+  ./scripts/run_playwright_mcp.sh >/tmp/travel-planner-mcp.log 2>&1 &
+  MCP_PID=$!
+fi
 
 echo "== Starting the frontend on http://localhost:3000"
 (cd frontend && npm run dev >/tmp/travel-planner-frontend.log 2>&1) &

@@ -1,0 +1,39 @@
+# The planner's API: Aegra, serving the Agent Protocol and the five graphs.
+#
+# This is the deployment. Aegra loads the graphs, owns the database and serves
+# the protocol; there is no separate application server beside it.
+
+[Unit]
+Description=Travel Planner - Aegra Agent Protocol server
+Documentation=https://github.com/adarshcod30/Travel-Planner-Agent
+After=network-online.target postgresql.service travel-planner-mcp.service
+Wants=network-online.target travel-planner-mcp.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=travelplanner
+Group=travelplanner
+WorkingDirectory=/opt/travel-planner
+EnvironmentFile=/opt/travel-planner/.env
+Environment=HOST=0.0.0.0
+Environment=PORT=2026
+ExecStart=/usr/bin/env bash /opt/travel-planner/scripts/run_aegra.sh
+Restart=on-failure
+RestartSec=5
+
+# A v5 run holds a browser open while a person takes it over, and the handover
+# has its own timeout. Give a stop enough room to let those close cleanly
+# rather than leaving orphaned Chromium processes behind.
+TimeoutStopSec=90
+KillMode=mixed
+
+# Screenshots are written under data/runs and deleted with their thread.
+ReadWritePaths=/opt/travel-planner/data
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

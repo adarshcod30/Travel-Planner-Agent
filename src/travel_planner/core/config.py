@@ -126,10 +126,6 @@ class Settings(BaseSettings):
     playwright_mcp_command: str = "npx"
     playwright_mcp_args: str = "-y @playwright/mcp@latest --isolated"
 
-    filesystem_mcp_root: str = "./data/workspace"
-    filesystem_mcp_command: str = "npx"
-    filesystem_mcp_args: str = "-y @modelcontextprotocol/server-filesystem"
-
     fetch_mcp_command: str = "uvx"
     fetch_mcp_args: str = "mcp-server-fetch"
 
@@ -195,10 +191,6 @@ class Settings(BaseSettings):
         if self.playwright_mcp_headless and "--headless" not in args:
             args.append("--headless")
         return args
-
-    @property
-    def filesystem_mcp_arg_list(self) -> list[str]:
-        return [*self.filesystem_mcp_args.split(), self.filesystem_mcp_root]
 
     @property
     def fetch_mcp_arg_list(self) -> list[str]:

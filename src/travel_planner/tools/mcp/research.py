@@ -16,7 +16,7 @@ reliable and cheaper, and it means a failed browse degrades the research rather
 than hanging an agent.
 
 The stateless servers and the browser are handled differently on purpose:
-travel-mcp, fetch and filesystem answer each call independently, so they run
+travel-mcp, fetch and tavily answer each call independently, so they run
 through a session-per-call toolset; the browser needs one session held across
 navigate and snapshot, so it runs inside `browser_session()`.
 

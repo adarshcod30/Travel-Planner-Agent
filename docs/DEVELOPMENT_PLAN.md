@@ -144,7 +144,7 @@ Travel-Planner-Agent/
 ├── frontend/                        # Next.js 15
 ├── scripts/
 ├── tests/
-└── benchmarks/                      # cross-version latency / cost / quality runs
+└── scripts/measure_versions.py       # cross-version latency / cost runs
 ```
 
 The two earlier prototypes stay on disk under `_reference/`, gitignored. They are

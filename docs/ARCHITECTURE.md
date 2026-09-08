@@ -33,6 +33,24 @@ which fail silently:
   the alternative would have forced telemetry fields into the public input
   contract.
 
+**A node is a `Protocol`, not a `Callable`.** `StateGraph.add_node` accepts a
+ten-way union of generic protocols and infers the state type from whatever it is
+handed. Given a plain `def` it resolves; given a value annotated as
+`Callable[[TripState], dict[str, Any]]` it cannot solve the type variable and
+falls back to `Never` — so every factory-built node in the project (the re-run
+wrappers, the orchestrator, the section gate) type-checked as an error while
+working perfectly at run time. `TripState`'s companion `Node` protocol names the
+contract instead:
+
+```python
+class Node(Protocol):
+    def __call__(self, state: TripState) -> dict[str, Any]: ...
+```
+
+That is the difference between a type checker that reports ten false errors and
+one that actually checks node signatures against the state. `mypy src` is
+blocking in CI, so the distinction has to hold.
+
 ## Agents are a constant
 
 Ten specialists, each four class attributes and a prompt method. An instance is
@@ -190,7 +208,7 @@ filter rather than a regex.
 Three tiers, and the boundary between them is what each needs to be true
 rather than how fast it is.
 
-**Hermetic — 631 tests.** No credentials, no network, no `.env`; the model IDs
+**Hermetic — 630 tests.** No credentials, no network, no `.env`; the model IDs
 have defaults so the suite is hermetic rather than passing only on a machine
 that happens to be configured. The graph tests drive the *real* compiled graphs
 with a scripted stand-in for the model layer, so topology, routing, the revision
@@ -199,7 +217,7 @@ against the code that ships.
 
 **Serving — 18 tests.** The tier above compiles graphs with an in-memory
 checkpointer and calls them directly. That is what makes it fast, and it is also
-why 631 passing tests said nothing about Aegra: the manifest wiring, assistant
+why 630 passing tests said nothing about Aegra: the manifest wiring, assistant
 registration, the injected Postgres checkpointer and the custom routes were
 covered by nothing. This tier boots a real server against a real Postgres and
 checks precisely those. Two things about it are deliberate:

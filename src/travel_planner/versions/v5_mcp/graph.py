@@ -7,7 +7,7 @@
 
 One node is added to v4, and it changes what every other node sees: `research`
 drives four MCP servers — a real browser via Playwright, the custom travel-mcp
-server, fetch and filesystem — and writes what it found into `research_notes`,
+server, fetch and tavily — and writes what it found into `research_notes`,
 which `render_trip_context` puts at the top of every specialist's prompt.
 
 **This is the only version registered as a factory graph.** v1 to v4 export a

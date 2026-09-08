@@ -17,7 +17,7 @@ to manage.
 
 `load_toolset()` uses `get_tools()`, which opens and closes a session per tool
 call. That is exactly right for stateless servers — travel-mcp, fetch,
-filesystem — where every call is independent, and it means no subprocess is
+fetch — where every call is independent, and it means no subprocess is
 held open between uses.
 
 It is exactly wrong for a browser. `browser_navigate` and `browser_snapshot`
@@ -50,7 +50,6 @@ log = get_logger(__name__)
 #: report clearly when a server connects but offers nothing usable.
 EXPECTED_TOOLS: dict[str, tuple[str, ...]] = {
     "playwright": ("browser_navigate", "browser_snapshot"),
-    "filesystem": ("read_file", "write_file"),
     "fetch": ("fetch",),
     "travel": ("get_weather_forecast", "convert_currency"),
     "tavily": ("tavily_search",),
@@ -97,10 +96,6 @@ def build_connections(settings: Settings | None = None) -> dict[str, dict[str, A
                     conns[name] = _stdio(
                         settings.playwright_mcp_command, settings.playwright_mcp_arg_list
                     )
-            case "filesystem":
-                conns[name] = _stdio(
-                    settings.filesystem_mcp_command, settings.filesystem_mcp_arg_list
-                )
             case "fetch":
                 conns[name] = _stdio(settings.fetch_mcp_command, settings.fetch_mcp_arg_list)
             case "memory":

@@ -175,6 +175,25 @@ curl -sX POST localhost:2026/admin/sweep | jq # clear abandoned runs now
 
 Screenshots live under `data/runs/<thread>/` and are deleted with their thread.
 
+### The growth the sweeper does not reach
+
+Postgres is not what fills the disk on a shared host. Playwright MCP writes a
+console log **and a full page dump for every browser action** into
+`.playwright-mcp/` beside the working directory — 2,714 files and 224 MB
+accumulated during this project's own development, none of it read by anything.
+Neither `--output-dir` nor the subprocess working directory relocates it,
+measured on 0.0.80.
+
+Nothing deletes it automatically, so on a shared instance put it on a timer:
+
+```bash
+# once a week is ample; it is pure debris
+0 3 * * 0  cd /opt/travel-planner && ./scripts/clean.sh >/dev/null
+```
+
+`clean.sh` also clears orphaned run screenshots — the ones belonging to runs
+nobody finished, which the archive path never sees.
+
 ## When something is wrong
 
 ```bash
@@ -191,6 +210,8 @@ journalctl -u travel-planner-web -f
 | A run seems stuck for minutes | it is probably waiting for a person; check `/handover` |
 | Screenshots are blank | the frames are served through the proxy — confirm `/api/aegra/runs/…/frames/…` returns `image/jpeg` and the right byte count |
 | The version list is empty | the frontend cannot reach Aegra; check `AEGRA_URL` in the web unit |
+| The disk is filling and Postgres is small | `.playwright-mcp/` — browser debris nothing deletes. Run `./scripts/clean.sh`, then put it on a timer |
+| A handover expired before anyone answered | `BROWSER_HANDOVER_TIMEOUT_SECONDS` (default 300). It cannot be indefinite: a live run is holding a Chromium and one of very few browser slots |
 
 ## Upgrading
 

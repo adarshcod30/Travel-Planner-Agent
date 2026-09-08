@@ -238,9 +238,10 @@ journalctl -u travel-planner -f
 
 - **Chromium needs system libraries.** `npx playwright install --with-deps
   chromium` pulls them, and needs root. On a host where you cannot install
-  packages, run v5 with `MCP_ENABLED_SERVERS=filesystem,fetch,travel` — the
-  research node degrades to the non-browser lookups and says so in its notes
-  rather than failing.
+  packages, run v5 with `MCP_ENABLED_SERVERS=fetch,travel,tavily,memory,time` —
+  the research node degrades to the non-browser lookups and says so in its notes
+  rather than failing. Everything except the live browsing still works: the
+  reference data, the exchange rate, cross-trip memory and the plan itself.
 - **pgvector must match the server's major version.** The extension is built per
   major release; installing it for 17 and running 18 fails at
   `CREATE EXTENSION`.

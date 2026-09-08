@@ -129,11 +129,6 @@ def test_headless_flag_is_appended_once():
     assert "--headless" not in _settings(playwright_mcp_headless=False).playwright_mcp_arg_list
 
 
-def test_filesystem_sandbox_root_is_passed_as_the_last_argument():
-    args = _settings(filesystem_mcp_root="/tmp/sandbox").filesystem_mcp_arg_list
-    assert args[-1] == "/tmp/sandbox"
-
-
 def test_travel_server_uses_this_interpreter():
     """`python` on PATH is not necessarily the venv's python."""
     import sys

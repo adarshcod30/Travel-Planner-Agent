@@ -106,7 +106,7 @@ the live web.
 | **Model tiering** | Ten agents mapped to Nova Pro / Lite / Micro by how hard the job is, with a repair-and-escalate loop for structured output |
 | **Storage that reclaims itself** | A finished trip keeps its plan and deletes everything that produced it — ~110 KB per run |
 | **Runs natively, no Docker** | Four ordinary processes on an ordinary host. Deployable on a locked-down machine with no container runtime |
-| **Three-tier test suite** | 631 hermetic · 18 serving (real Aegra + Postgres, in CI) · 20 live. Type-checked, linted and formatted on every push |
+| **Three-tier test suite** | 630 hermetic · 18 serving (real Aegra + Postgres, in CI) · 20 live. Type-checked, linted and formatted on every push |
 
 ---
 
@@ -185,7 +185,7 @@ hotel listing. It is the one version where the slow part isn't the model.
 | **Frontend** | Next.js 16 · React 19 · Tailwind 4 · TypeScript | Route-handler proxy means no CORS anywhere |
 | **Validation** | Pydantic v2 + `pydantic-settings` | Every agent returns a validated schema, not prose |
 | **Packaging** | `uv` | Lockfile-driven, reproducible installs |
-| **CI/CD** | GitHub Actions — 3 jobs | Backend (lint, format, mypy, 631 tests), Frontend (tsc, eslint, build), Serving layer (real Postgres + Aegra) |
+| **CI/CD** | GitHub Actions — 3 jobs | Backend (lint, format, mypy, 630 tests), Frontend (tsc, eslint, build), Serving layer (real Postgres + Aegra) |
 | **Quality** | ruff · mypy · pytest | Lint, format and types all blocking |
 | **Deployment** | systemd, native | Three units; no Docker, no compose file |
 
@@ -839,6 +839,7 @@ where the IP does not. Only port 3000 needs to be reachable.
 | `resolve_bedrock_models.sh` | prints the model IDs your account actually exposes |
 | `measure_versions.py` | the benchmark table at the top of this file |
 | `serve_lan.sh` / `serve_public.sh` | share on a LAN, or through a tunnel |
+| `clean.sh` | drop caches, browser debris and orphaned run screenshots; `--all` also drops `.venv` and `node_modules` |
 
 ---
 
@@ -1062,7 +1063,7 @@ Three GitHub Actions jobs on every push and pull request to `main`:
 
 | Job | Gates |
 |---|---|
-| **Backend** | `ruff check` · `ruff format --check` · `mypy src` · 631 hermetic tests — all blocking |
+| **Backend** | `ruff check` · `ruff format --check` · `mypy src` · 630 hermetic tests — all blocking |
 | **Frontend** | `tsc --noEmit` · `eslint --max-warnings 0` · `next build` |
 | **Serving layer** | boots real Aegra against a **PostgreSQL service container**, runs the 18 integration tests |
 
@@ -1099,17 +1100,17 @@ That job is the one that would notice if the server stopped wiring correctly.
 Three tiers, separated by what each one needs to be true.
 
 ```bash
-uv run pytest -m "not live and not integration"   # 631 — no credentials, no network
+uv run pytest -m "not live and not integration"   # 630 — no credentials, no network
 uv run pytest -m "integration and not live"       # 18  — needs a running server
 uv run pytest -m live                             # 20  — spends real Bedrock calls
 uv run ruff check . && uv run ruff format --check . && uv run mypy src
 ```
 
-**Hermetic (631).** Every model call is scripted, so a graph's topology, routing
+**Hermetic (630).** Every model call is scripted, so a graph's topology, routing
 and state handling are tested with no network and no account. This is the tier
 that runs on every push.
 
-**Serving (18).** The half the hermetic tier cannot reach. Those 631 tests
+**Serving (18).** The half the hermetic tier cannot reach. Those 630 tests
 compile the graphs with an in-memory checkpointer and call them directly — which
 is exactly why they are fast, and exactly why they say nothing about Aegra. This
 tier boots a real server against a real Postgres and checks the things only a
@@ -1222,6 +1223,7 @@ pages can never carry a genuine payment form through with it.
 | `ValidationError` naming `decision` on resume | a `book`/`skip` answer sent to a plan review. Use `accept`, `comments`, `edit`, `response` or `ignore` |
 | Model access denied | Bedrock model access is per-account, per-region. `./scripts/resolve_bedrock_models.sh` prints what yours exposes |
 | Postgres role or database missing | `./scripts/bootstrap_postgres.sh` — idempotent, safe to re-run |
+| Disk filling up while Postgres stays small | `.playwright-mcp/` — Playwright MCP writes a console log and a full page dump per browser action, and nothing deletes them. `./scripts/clean.sh`, then put it on a timer |
 
 ---
 

@@ -42,12 +42,6 @@ yarn-error.log*
 pnpm-debug.log*
 
 # ---- Databases & runtime data ----
-data/*.db
-data/*.db-journal
-data/*.db-wal
-data/*.db-shm
-data/*.sqlite
-data/*.sqlite3
 *.db
 *.sqlite3
 logs/
@@ -86,14 +80,12 @@ frontend/.env.local
 /.*/
 !/.github/
 
-# Cross-trip memory graph — local state, not source
-data/memory.json
-
-# Per-run browser screenshots (v5). Written during a run and deleted by
-# `storage._purge_artifacts` when the trip completes — transient by design, and
-# they are frames of real browsing sessions besides. 157 of them reached this
-# repository before this rule existed.
-data/runs/
+# Everything under data/ is generated at runtime and nothing in it is source:
+# the memory graph, per-run screenshots (deleted by `storage._purge_artifacts`
+# when a trip completes) and Playwright's own output. 157 screenshots of real
+# browsing sessions reached this repository before there was a rule, so the
+# rule is now the whole directory rather than a list of what it holds today.
+data/
 
 # Generated instruction files at the root. Next writes one on every dev start
 # unless `agentRules: false` is set in next.config.ts, which it is — this is

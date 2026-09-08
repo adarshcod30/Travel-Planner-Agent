@@ -187,7 +187,7 @@ async def browse(
     start_url: str | None = None,
     max_steps: int = 18,
     budget_seconds: float = 180.0,
-    settle_seconds: float = 5.0,
+    settle_seconds: float = 8.0,
     settings: Settings | None = None,
 ) -> Outcome:
     """Drive the browser toward `goal` until it is reached or the budget runs out.
@@ -210,6 +210,9 @@ async def browse(
             # site worth browsing fills its results in after that — reading
             # immediately gives the model an empty shell and a first move made
             # against a page that no longer exists by the time it lands.
+            # Eight seconds because that is what a hotel listing measurably
+            # takes to render its cards; at five the agent sees only filters
+            # and spends its budget clicking them.
             await control.perform(
                 toolset, control.Action(kind="wait", seconds=settle_seconds), thread_id=thread_id
             )
@@ -365,9 +368,18 @@ def _what_changed(before: Snapshot, after: Snapshot) -> str:
 
 
 async def _look(toolset: McpToolset) -> dict[str, Any]:
-    """Everything the model needs about where it is."""
+    """Everything the model needs about where it is.
+
+    Clears a dismissible overlay first. Booking sites throw a Login/Signup
+    panel over their listing a few seconds after you arrive; it is promotional,
+    it has an X, and it swallows every click aimed at the page behind it. The
+    agent could not see that — its clicks simply did nothing — so it spent
+    entire budgets clicking a hotel card that an invisible-to-it modal was
+    eating. A wall with no way out is left alone; that is a person's business.
+    """
     from travel_planner.tools.mcp.explore import page_text
 
+    await control.dismiss_overlay(toolset)
     try:
         page = await control.read_page(toolset)
     except control.ControlError:

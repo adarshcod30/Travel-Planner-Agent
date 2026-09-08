@@ -214,3 +214,63 @@ def test_evaluate_results_are_unwrapped():
 
 def test_a_non_json_result_still_returns_something_usable():
     assert control._result_json("### Result\nnavigated\n### Ran")["ok"] is True
+
+
+# --- login walls that are not password fields -----------------------------------
+
+
+def test_a_mobile_number_login_is_a_login():
+    """Indian booking sites sign you in by mobile number, not a password. Asking
+    only "is there a password field" missed the single most common login wall on
+    every site this planner actually uses — goibibo throws a Login/Signup panel
+    with a +91 box over its listing and the gate saw nothing."""
+    assert control.classify_gate({"phone": True, "path": "/hotels/hotels-in-agra-ct/"}) == "login"
+
+
+def test_a_payment_page_still_outranks_a_phone_login():
+    assert control.classify_gate({"phone": True, "card": True, "path": "/x"}) == "payment"
+
+
+# --- cards built out of divs ----------------------------------------------------
+
+CARD = """### Snapshot
+```yaml
+- generic [ref=e629] [cursor=pointer]:
+  - list [ref=e633]:
+    - generic [ref=e639]: View All
+  - generic [ref=e641]:
+    - generic [ref=e647]: "4"
+    - generic [ref=e651]: Lemon Tree Hotel Agra
+    - generic [ref=e655]: 11.3 km drive to Taj Mahal
+- checkbox "Book @ ₹0" [ref=e194]
+```
+"""
+
+
+def test_a_clickable_card_is_named_from_its_contents():
+    """A result card is a clickable div wrapping a dozen unnamed divs — the
+    hotel's name is a descendant and the card itself has no accessible name.
+    Dropping unnamed elements dropped every hotel on the page and left the agent
+    choosing between filters, which is how it concluded that a filter called
+    "Book @ ₹0" was a cheap hotel."""
+    by_ref = {e["ref"]: e for e in control.interactive_elements(CARD)}
+    assert "e629" in by_ref, "the card itself must be offered, since it is what you click"
+    assert "Lemon Tree Hotel Agra" in by_ref["e629"]["name"]
+
+
+def test_card_furniture_is_not_mistaken_for_a_name():
+    """The first text nodes in a card are its carousel arrows and rating badge,
+    so taking them in document order labelled every hotel "View All · 4"."""
+    name = {e["ref"]: e for e in control.interactive_elements(CARD)}["e629"]["name"]
+    assert "View All" not in name
+    assert name.strip() != "4"
+
+
+def test_cursor_pointer_is_found_after_the_ref_too():
+    """It sits on either side of the ref depending on what else the node
+    carries. Reading only the attributes before it made every clickable card on
+    a listing page read as unclickable."""
+    line = (
+        "- generic [ref=e900] [cursor=pointer]:\n  - generic [ref=e901]: Holiday Inn Agra MG Road"
+    )
+    assert any(e["ref"] == "e900" for e in control.interactive_elements(line))

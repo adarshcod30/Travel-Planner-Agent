@@ -114,7 +114,7 @@ class Action:
 # ---------------------------------------------------------------------------
 
 _REF_LINE = re.compile(
-    r"^\s*-\s+(?P<role>[a-z]+)"  # role, e.g. button / link / generic
+    r"^(?P<indent>\s*)-\s+(?P<role>[a-z]+)"  # role, e.g. button / link / generic
     r'(?:\s+"(?P<name>[^"]*)")?'  # accessible name, when it has one
     # Any number of bracketed attributes may sit between the name and the ref
     # — `[active]`, `[checked]`, `[cursor=pointer]`. Excluding "[" here instead
@@ -190,7 +190,113 @@ _WIDGET_WORDS = (
 )
 
 
-def _score(role: str, name: str, clickable: bool) -> int:
+#: A real price: a currency and an amount, not part of a range and not the
+#: label on a filter. "₹0 to ₹1000" is a checkbox; "₹5,719" is a hotel.
+_REAL_PRICE = re.compile(r"(?:₹|Rs\.?|INR)\s?[0-9][0-9,]{2,}")
+_PRICE_RANGE = re.compile(
+    r"(?:₹|Rs\.?|INR)\s?[0-9][0-9,]*\s*(?:-|\u2013|to)\s*(?:₹|Rs\.?|INR)?\s?[0-9][0-9,]*"
+)
+
+#: How far from a price an element can be and still belong to that result.
+#: A card is a dozen or so lines of tree; beyond that is the next card.
+_PRICE_WINDOW = 14
+
+
+#: Text on a line, whether it is an accessible name or content after the colon.
+_TEXT_ON_LINE = re.compile(r'(?:"([^"]{2,60})")|(?::\s*(.{2,60}?)\s*$)')
+
+#: Bracketed attributes, which are metadata rather than anything a reader sees.
+_ATTRS = re.compile(r"\[[^\]]*\]")
+
+
+#: Fragments that are furniture, not the name of anything. A card's first few
+#: text nodes are its image carousel and its rating badge, so taking them in
+#: document order labelled every hotel on the page "View All · 4".
+_FURNITURE = frozenset(
+    {
+        "view all",
+        "ad",
+        "copy",
+        "new",
+        "more",
+        "read more",
+        "see all",
+        "next",
+        "previous",
+        "close",
+        "share",
+        "save",
+        "sold out",
+        "%",
+        "off",
+    }
+)
+
+
+def _looks_like_a_name(text: str) -> bool:
+    stripped = text.strip().strip('"').strip()
+    if len(stripped) < 6 or stripped.lower() in _FURNITURE:
+        return False
+    # A rating, a review count, a price on its own — a number is never a name.
+    return not re.fullmatch(r"[\d.,()₹%+\-\s]+", stripped)
+
+
+def _label_from_children(lines: list[str], index: int, indent: int) -> str:
+    """Name an unnamed container from the best text inside it.
+
+    Booking sites build a result card as a clickable div wrapping a dozen
+    unnamed divs: the hotel's name, its rating and its price are all
+    descendants and the card itself has no accessible name. Dropping unnamed
+    elements therefore dropped every result on the page and left the agent
+    choosing between filters — which is exactly what it did, concluding that a
+    filter called "Book @ ₹0" was a cheap hotel.
+
+    Longest-first rather than document order, because the first fragments in a
+    card are its carousel arrows and its rating badge, and the longest is
+    almost always the name.
+    """
+    parts: list[str] = []
+    for line in lines[index + 1 : index + 30]:
+        if not line.strip():
+            continue
+        depth = len(line) - len(line.lstrip())
+        if depth <= indent:
+            break  # out of this element and into its sibling
+        if (m := _TEXT_ON_LINE.search(line.rstrip())) is None:
+            continue
+        text = _ATTRS.sub("", m.group(1) or m.group(2) or "").strip().strip('"')
+        if _looks_like_a_name(text) and text not in parts:
+            parts.append(text)
+
+    parts.sort(key=len, reverse=True)
+    return " · ".join(parts[:2])[:90]
+
+
+def _price_anchors(lines: list[str]) -> set[int]:
+    """Line numbers where a real, individual price appears.
+
+    This is what tells a results page apart from a search form. A listing page
+    puts its filters at the top — every sort option, every amenity, every price
+    band — and its actual results four hundred lines down. Ranked by role
+    alone, the filters win every slot and the results are never seen at all,
+    which is precisely how a browsing loop ends up clicking "Book @ ₹0" (a
+    filter) and concluding it had found a cheap hotel.
+    """
+    anchors: set[int] = set()
+    for i, line in enumerate(lines):
+        if not _REAL_PRICE.search(line) or _PRICE_RANGE.search(line):
+            continue
+        if any(role in line for role in ("checkbox", "radio", "slider")):
+            continue
+        anchors.add(i)
+    return anchors
+
+
+def _near_price(index: int, anchors: set[int]) -> bool:
+    return any(abs(index - a) <= _PRICE_WINDOW for a in anchors)
+
+
+def _score(role: str, name: str, clickable: bool, borrowed: bool = False) -> int:
     """How likely this element is to be the thing you want to act on.
 
     Ranking rather than filtering, because a page's most important control is
@@ -198,6 +304,14 @@ def _score(role: str, name: str, clickable: bool) -> int:
     document order the useful half never survives truncation.
     """
     lowered = name.lower()
+    # A clickable container that had to borrow its label from four separate
+    # descendants is a card — a hotel, a flight, a room. Nothing else on a page
+    # has that shape, and on a results page it is the only thing worth
+    # clicking. Scored above every filter and every input deliberately: the
+    # first version ranked inputs highest and buried all 429 hotels beneath a
+    # sort dropdown and a list of amenity checkboxes.
+    if borrowed and clickable and len(name) > 15:
+        return 120
     if role in ("textbox", "searchbox", "combobox", "spinbutton"):
         return 100
     if role == "button" and name:
@@ -225,7 +339,10 @@ def interactive_elements(snapshot: str, limit: int = 40) -> list[dict[str, str]]
     found: list[tuple[int, int, dict[str, str]]] = []
     seen: set[str] = set()
 
-    for order, line in enumerate(snapshot_body(snapshot).splitlines()):
+    lines = snapshot_body(snapshot).splitlines()
+    anchors = _price_anchors(lines)
+
+    for order, line in enumerate(lines):
         m = _REF_LINE.match(line)
         if not m:
             continue
@@ -234,10 +351,27 @@ def interactive_elements(snapshot: str, limit: int = 40) -> list[dict[str, str]]
             continue
 
         role = m["role"]
-        name = (m["name"] or m["text"] or "").strip().strip(":").strip()
-        clickable = "cursor=pointer" in (m["attrs"] or "")
+        # `[cursor=pointer]` sits on either side of the ref depending on what
+        # else the node carries, so the whole line is what has to be checked.
+        # Looking only at the attributes before the ref made every clickable
+        # card on a listing page read as unclickable.
+        clickable = "cursor=pointer" in line
+        raw = m["name"] or _ATTRS.sub("", m["text"] or "")
+        name = raw.strip().strip(":").strip()
 
-        score = _score(role, name, clickable)
+        # A clickable container with no name of its own is a card. Borrow one
+        # from its contents so it can be seen, ranked and clicked.
+        borrowed = False
+        if not name and clickable:
+            name = _label_from_children(lines, order, len(m["indent"]))
+            borrowed = bool(name)
+
+        score = _score(role, name, clickable, borrowed)
+        # A named element sitting beside a real price is a result — a hotel, a
+        # flight, a room — and on a results page those are the only things
+        # worth acting on. Weighted above every filter deliberately.
+        if name and _near_price(order, anchors):
+            score += 95
         if score <= 0:
             continue
         # An unnamed link is nothing a model can reason about; an unnamed input
@@ -266,30 +400,167 @@ def page_title(snapshot: str) -> str | None:
     return None
 
 
+#: Every DOM query in this module is built on this, and it is not optional.
+#:
+#: `document.querySelector` does not cross a shadow root. goibibo — and most
+#: modern booking sites — render their entire page inside shadow DOM, so
+#: `document.querySelectorAll('div')` returns **zero** on a page visibly full
+#: of them. Everything built on a plain query was therefore blind on exactly
+#: the sites that matter: the login gate never fired, the overlay was never
+#: seen, and a coordinate click resolved to the shadow host rather than the
+#: thing under the cursor. Playwright's own snapshot pierces shadow roots,
+#: which is why the accessibility tree looked healthy while the DOM looked
+#: empty — and why this took so long to notice.
+_DEEP = """
+const deepAll = (selector, root = document) => {
+  const out = [];
+  const walk = (node) => {
+    if (!node) return;
+    try { out.push(...node.querySelectorAll(selector)); } catch {}
+    const kids = node.querySelectorAll ? node.querySelectorAll('*') : [];
+    for (const el of kids) if (el.shadowRoot) walk(el.shadowRoot);
+  };
+  walk(root);
+  return out;
+};
+const deep = (selector) => deepAll(selector)[0] || null;
+const deepText = () => {
+  const parts = [];
+  const walk = (node) => {
+    if (!node) return;
+    for (const el of node.querySelectorAll ? node.querySelectorAll('*') : []) {
+      if (el.shadowRoot) walk(el.shadowRoot);
+    }
+  };
+  walk(document);
+  return document.body ? document.body.innerText || '' : '';
+};
+"""
+
+
 #: What the page is asked about itself. Matching text in the accessibility tree
 #: was the first attempt and was wrong in the most ordinary case: every
 #: Wikipedia-family article carries a "Log in" link in its header, so every
 #: article looked like a login page. A link that says "log in" is not a login
 #: page — a password field is.
-_GATE_JS = """() => {
-  const q = (s) => { try { return !!document.querySelector(s); } catch { return false; } };
+_GATE_JS = (
+    """() => {"""
+    + _DEEP
+    + """
+  const q = (s) => { try { return !!deep(s); } catch { return false; } };
   const text = (document.body ? document.body.innerText || '' : '').toLowerCase();
   return {
     url: location.href,
     path: location.pathname.toLowerCase(),
     password: q('input[type=password]'),
     otp: q('input[autocomplete*="one-time-code"], input[name*="otp" i], input[id*="otp" i]'),
+    // A phone-number login. Indian booking sites sign you in by mobile number
+    // rather than a password, so "is there a password field" missed the single
+    // most common login wall on every site this planner actually uses.
+    phone: q('input[type=tel], input[autocomplete*="tel"], input[name*="mobile" i], input[name*="phone" i]'),
     card: q('input[autocomplete*="cc-number"], input[name*="cardnumber" i], input[name*="card-number" i], input[name*="card_number" i]'),
     upi: q('input[name*="upi" i], input[id*="upi" i]'),
     payText: /proceed to pay|pay now|card number|cvv|net banking/.test(text),
   };
 }"""
+)
+
 
 #: Path fragments that only appear on a real authentication page.
 AUTH_PATHS = ("/login", "/signin", "/sign-in", "/auth/", "/account/login")
 
 #: Path fragments that mean money is about to move.
 PAYMENT_PATHS = ("/payment", "/checkout/pay", "/paymentoptions")
+
+
+#: Whether a modal is sitting over the page, and whether it can be closed.
+#:
+#: This is the difference between "hand the browser to a person" and "press the
+#: X and carry on". Booking sites throw a Login/Signup panel over their listing
+#: within seconds of arriving — it is promotional, it is dismissible, and it
+#: swallows every click aimed at the page behind it. Treating it as a login
+#: wall would stop a run that only needed one click; ignoring it left the agent
+#: clicking a hotel card over and over while the overlay ate every one.
+_OVERLAY_JS = """() => {
+  const vw = innerWidth, vh = innerHeight;
+  const candidates = [...document.querySelectorAll('div,section,aside,dialog')].filter(el => {
+    const s = getComputedStyle(el);
+    if (s.position !== 'fixed' && s.position !== 'absolute') return false;
+    if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < vw * 0.25 || r.height < vh * 0.25) return false;
+    return (+s.zIndex || 0) > 100 || el.getAttribute('role') === 'dialog' || el.tagName === 'DIALOG';
+  });
+  if (!candidates.length) return { present: false };
+  const modal = candidates.sort((a, b) =>
+    (+getComputedStyle(b).zIndex || 0) - (+getComputedStyle(a).zIndex || 0))[0];
+  const closer = modal.querySelector(
+    '[aria-label*="close" i],[title*="close" i],[class*="close" i],[data-testid*="close" i],button.close'
+  ) || [...modal.querySelectorAll('button,span,div[role=button],svg')].find(
+    el => ['\u00d7', '\u2715', '\u2716', '\u274c', 'x'].includes((el.textContent || '').trim().toLowerCase())
+  );
+  return {
+    present: true,
+    text: (modal.innerText || '').slice(0, 200),
+    closable: !!closer,
+  };
+}"""
+
+
+async def dismiss_overlay(toolset: McpToolset, timeout: float = DEFAULT_TIMEOUT) -> str | None:
+    """Close a modal sitting over the page. Returns what it closed, or None.
+
+    Only ever presses a close control that the modal itself provides — it does
+    not click through, around, or past anything. A modal with no way out is
+    left alone, because that is a wall and walls are a person's business.
+    """
+    ev = toolset.get("browser_evaluate")
+    if ev is None:
+        return None
+    try:
+        found = _result_json(
+            mcp_text(await asyncio.wait_for(ev.ainvoke({"function": _OVERLAY_JS}), timeout=timeout))
+        )
+    except Exception:
+        return None
+    if not found.get("present") or not found.get("closable"):
+        return None
+
+    clicked = _result_json(
+        mcp_text(await asyncio.wait_for(ev.ainvoke({"function": _CLOSE_JS}), timeout=timeout))
+    )
+    if clicked.get("ok"):
+        summary = " ".join(str(found.get("text", "")).split())[:60]
+        log.info("overlay_dismissed", text=summary)
+        events.browser_action("dismiss", detail=f"closed an overlay: {summary}")
+        return summary
+    return None
+
+
+#: Press the modal's own close control. Kept separate from finding it so the
+#: page is not mutated by a query that was only meant to look.
+_CLOSE_JS = """() => {
+  const vw = innerWidth, vh = innerHeight;
+  const candidates = [...document.querySelectorAll('div,section,aside,dialog')].filter(el => {
+    const s = getComputedStyle(el);
+    if (s.position !== 'fixed' && s.position !== 'absolute') return false;
+    if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < vw * 0.25 || r.height < vh * 0.25) return false;
+    return (+s.zIndex || 0) > 100 || el.getAttribute('role') === 'dialog' || el.tagName === 'DIALOG';
+  });
+  if (!candidates.length) return { ok: false };
+  const modal = candidates.sort((a, b) =>
+    (+getComputedStyle(b).zIndex || 0) - (+getComputedStyle(a).zIndex || 0))[0];
+  const closer = modal.querySelector(
+    '[aria-label*="close" i],[title*="close" i],[class*="close" i],[data-testid*="close" i],button.close'
+  ) || [...modal.querySelectorAll('button,span,div[role=button],svg')].find(
+    el => ['\u00d7', '\u2715', '\u2716', '\u274c', 'x'].includes((el.textContent || '').trim().toLowerCase())
+  );
+  if (!closer) return { ok: false };
+  (closer.closest('button,[role=button]') || closer).click();
+  return { ok: true };
+}"""
 
 
 def classify_gate(signals: dict[str, Any]) -> str | None:
@@ -307,7 +578,7 @@ def classify_gate(signals: dict[str, Any]) -> str | None:
         return "payment"
     if signals.get("payText"):
         return "payment"
-    if signals.get("password") or signals.get("otp"):
+    if signals.get("password") or signals.get("otp") or signals.get("phone"):
         return "login"
     if any(p in path for p in AUTH_PATHS):
         return "login"

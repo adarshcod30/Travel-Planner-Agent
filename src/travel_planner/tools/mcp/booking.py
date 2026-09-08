@@ -384,16 +384,21 @@ async def proceed_toward_booking(
     them to that page with the search already filled in.
     """
     settings = settings or get_settings()
+    goal = (
+        f"You are on a list of hotels in {city} for "
+        f"{checkin.strftime('%-d %B')} to {checkout.strftime('%-d %B %Y')}, "
+        f"{travelers} adults. Open a named hotel from the list — one whose name you can "
+        "see, not a filter — and begin booking a room: choose the room and press whatever "
+        "continues to the next step. Stop as soon as the site asks anyone to sign in, "
+        "enter personal details, or pay. Do not fill in any of those."
+    )
+
+    # Two attempts, because the first is the one that lands on a listing still
+    # settling and spends its budget on filters. A second run from a fresh load
+    # is cheap next to reporting a dead end to someone who asked to book.
     outcome = await agent.browse(
         toolset,
-        (
-            f"You are on a list of hotels in {city} for "
-            f"{checkin.strftime('%-d %B')} to {checkout.strftime('%-d %B %Y')}, "
-            f"{travelers} adults. Open a reasonably priced hotel and begin booking a room "
-            "— choose the room and press whatever continues to the next step. "
-            "Stop as soon as the site asks anyone to sign in, enter personal details, or "
-            "pay. Do not fill in any of those."
-        ),
+        goal,
         thread_id=thread_id,
         # Back to the listing first. The pass that found the prices left the
         # browser wherever it finished, and starting from a half-scrolled page
@@ -406,6 +411,23 @@ async def proceed_toward_booking(
 
     page = await control.read_page(toolset)
     reason = outcome.needs_person or page.get("needs_person")
+
+    if not reason and listing_url:
+        log.info("booking_retry", why=outcome.reason[:120])
+        events.phase("booking", "trying the booking once more from a fresh load")
+        outcome = await agent.browse(
+            toolset,
+            goal,
+            thread_id=thread_id,
+            start_url=listing_url,
+            max_steps=settings.browser_agent_max_steps,
+            budget_seconds=settings.browser_agent_budget_seconds,
+            settle_seconds=10.0,
+            settings=settings,
+        )
+        page = await control.read_page(toolset)
+        reason = outcome.needs_person or page.get("needs_person")
+
     if reason:
         handed = await _hand_over(toolset, thread_id, reason, page, settings)
         return {

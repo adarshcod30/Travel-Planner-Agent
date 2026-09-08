@@ -13,7 +13,7 @@ import type { VersionMeta } from "@/lib/types";
  */
 export function AboutView({ versions }: { versions: VersionMeta[] }) {
   return (
-    <div className="mx-auto max-w-3xl space-y-10 pb-12">
+    <div className="max-w-4xl space-y-10 pb-12">
       <header className="space-y-3">
         <h1 className="text-3xl font-semibold tracking-tight text-bright">
           Five ways to plan the same trip

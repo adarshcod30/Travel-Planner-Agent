@@ -82,7 +82,7 @@ export default function ComparePage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-5 px-5 py-5">
+    <div className="space-y-5 px-6 py-5">
       <header className="flex items-baseline justify-between">
         <div>
           <h1 className="text-sm font-semibold text-bright">Compare two architectures</h1>

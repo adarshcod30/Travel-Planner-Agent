@@ -28,7 +28,7 @@ export function BookingOfferPanel({
   );
 
   return (
-    <section className="mx-auto max-w-2xl overflow-hidden rounded-lg border border-accent/40 bg-accent/5">
+    <section className="max-w-2xl overflow-hidden rounded-lg border border-accent/40 bg-accent/5">
       <header className="border-b border-accent/25 px-4 py-3">
         <h2 className="text-sm font-semibold text-accent">Look for real prices?</h2>
         <p className="mt-0.5 text-xs text-muted">

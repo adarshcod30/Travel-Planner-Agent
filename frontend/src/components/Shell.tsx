@@ -26,17 +26,20 @@ export function Shell({
   badges,
   status,
   children,
+  drawer,
 }: {
   view: ViewKey;
   onView: (v: ViewKey) => void;
   badges: Partial<Record<ViewKey, string>>;
   status: ReactNode;
   children: ReactNode;
+  /** Rendered outside the content column so it can sit on the screen edge. */
+  drawer?: ReactNode;
 }) {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-20 border-b border-line bg-ink/85 backdrop-blur">
-        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-6 gap-y-2 px-5 py-2.5">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-6 py-2.5">
           <div className="flex items-baseline gap-2.5">
             <h1 className="text-sm font-semibold tracking-tight text-bright">Travel Planner</h1>
             <span className="hidden text-[11px] text-muted sm:inline">
@@ -69,7 +72,12 @@ export function Shell({
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1400px] px-5 py-5">{children}</main>
+      {/* Full bleed. The content used to sit in a centred 1400px column, which
+          left a third of a wide screen empty either side while the plan itself
+          was squeezed — and this is an application, not an article. Individual
+          views cap their own line length where reading demands it. */}
+      <main className="px-6 py-5">{children}</main>
+      {drawer}
     </div>
   );
 }

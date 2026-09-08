@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { AboutView } from "@/components/AboutView";
+import { ArchitectureDrawer } from "@/components/ArchitectureDrawer";
 import { HistoryView } from "@/components/HistoryView";
 import { LiveView } from "@/components/LiveView";
 import { PlanView } from "@/components/PlanView";
@@ -28,6 +29,7 @@ import { useRun } from "@/lib/useRun";
 export default function PlannerPage() {
   const run = useRun();
   const [chosen, setChosen] = useState<{ view: ViewKey; duringPhase: RunPhase } | null>(null);
+  const [archOpen, setArchOpen] = useState(false);
 
   const follows: ViewKey =
     run.phase === "running"
@@ -79,6 +81,16 @@ export default function PlannerPage() {
               ? "ready"
               : undefined,
       }}
+      drawer={
+        <ArchitectureDrawer
+          versions={run.versions}
+          selected={run.selected}
+          onSelect={run.select}
+          open={archOpen}
+          onOpen={setArchOpen}
+          disabled={run.busy || run.phase === "interrupted"}
+        />
+      }
       status={
         <RunStatus
           phase={run.phase}
@@ -93,10 +105,9 @@ export default function PlannerPage() {
     >
       {view === "setup" && (
         <SetupView
-          versions={run.versions}
-          selected={run.selected}
-          onSelect={run.select}
+          version={run.version}
           onSubmit={start}
+          onOpenArchitecture={() => setArchOpen(true)}
           disabled={run.busy || run.phase === "interrupted"}
         />
       )}

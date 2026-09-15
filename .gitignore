@@ -91,10 +91,3 @@ data/
 # matter what generates the next one. Documentation lives in docs/.
 /*.md
 !/README.md
-
-# local agent and editor files, never committed
-.claude/
-.claude.json
-CLAUDE.local.md
-CLAUDE.md
-AGENTS.md
